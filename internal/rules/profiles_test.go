@@ -18,6 +18,7 @@ func TestAllProfiles(t *testing.T) {
 		"fullstack",
 		"fullstack-strict",
 		"design-patterns",
+		"trusted-core",
 	}
 
 	if len(profiles) != len(expected) {
@@ -64,8 +65,8 @@ func TestGetProfile_NotExists(t *testing.T) {
 
 func TestListProfileNames(t *testing.T) {
 	names := ListProfileNames()
-	if len(names) != 6 {
-		t.Errorf("ListProfileNames() returned %d names, want 6", len(names))
+	if len(names) != 7 {
+		t.Errorf("ListProfileNames() returned %d names, want 7", len(names))
 	}
 }
 

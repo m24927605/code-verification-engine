@@ -1,0 +1,9 @@
+{
+  "rule_id": "SEC-SECRET-001",
+  "scenario": "edge-case",
+  "expected_status": "pass",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "Test fixture with non-secret placeholder values like test_api_key should not be flagged"
+}

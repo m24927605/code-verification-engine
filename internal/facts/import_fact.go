@@ -4,11 +4,13 @@ import "fmt"
 
 // ImportFact represents an import/require/include statement.
 type ImportFact struct {
-	Language   Language `json:"language"`
-	File       string   `json:"file"`
-	Span       Span     `json:"span"`
-	ImportPath string   `json:"import_path"`
-	Alias      string   `json:"alias,omitempty"`
+	Language   Language    `json:"language"`
+	File       string      `json:"file"`
+	Span       Span        `json:"span"`
+	ImportPath string      `json:"import_path"`
+	Alias      string      `json:"alias,omitempty"`
+	Quality    FactQuality    `json:"quality,omitempty"`
+	Provenance FactProvenance `json:"provenance,omitempty"`
 }
 
 // NewImportFact creates a validated ImportFact.

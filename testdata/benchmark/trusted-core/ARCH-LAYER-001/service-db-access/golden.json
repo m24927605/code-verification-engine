@@ -1,0 +1,9 @@
+{
+  "rule_id": "ARCH-LAYER-001",
+  "scenario": "service-db-access",
+  "expected_status": "pass",
+  "expected_trust_class": "advisory",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "Service layer accessing DB is allowed — only controller/handler direct DB access is prohibited"
+}

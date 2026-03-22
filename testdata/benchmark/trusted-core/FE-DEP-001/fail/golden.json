@@ -1,0 +1,9 @@
+{
+  "rule_id": "FE-DEP-001",
+  "scenario": "fail",
+  "expected_status": "fail",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "No lock file present — only package.json without package-lock.json, yarn.lock, or pnpm-lock.yaml"
+}

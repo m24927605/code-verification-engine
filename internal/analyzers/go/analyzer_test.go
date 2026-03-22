@@ -283,6 +283,40 @@ func TestGoAnalyzer_DataAccessFacts(t *testing.T) {
 	}
 }
 
+func TestGoAnalyzer_DataAccessCallerContext(t *testing.T) {
+	root := fixtureRoot(t, "go-bad-controller-db")
+	files := collectGoFiles(t, root)
+
+	a := New()
+	result, err := a.Analyze(root, files)
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	if len(result.DataAccess) == 0 {
+		t.Fatal("expected at least one DataAccessFact")
+	}
+
+	foundCallerContext := false
+	for _, da := range result.DataAccess {
+		if da.File == "handler/user.go" && da.Backend == "database/sql" {
+			foundCallerContext = true
+			if da.CallerName != "GetUser" {
+				t.Errorf("expected CallerName=GetUser, got %q", da.CallerName)
+			}
+			if da.CallerKind != "function" {
+				t.Errorf("expected CallerKind=function, got %q", da.CallerKind)
+			}
+			if !da.ImportsDirect {
+				t.Error("expected ImportsDirect=true for file importing database/sql")
+			}
+		}
+	}
+	if !foundCallerContext {
+		t.Error("expected to find DataAccessFact with caller context in handler/user.go")
+	}
+}
+
 func TestGoAnalyzer_SecretFacts(t *testing.T) {
 	root := fixtureRoot(t, "go-secure-api")
 	files := collectGoFiles(t, root)

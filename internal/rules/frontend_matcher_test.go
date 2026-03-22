@@ -649,3 +649,205 @@ func TestFindFormValidation_WrongLanguage(t *testing.T) {
 		t.Errorf("expected no evidence for wrong language, got %d", len(ev))
 	}
 }
+
+// --- findDangerousHTML import branch (sanitizer skip + wrong lang) ---
+
+func TestFindDangerousHTML_WithSanitizer(t *testing.T) {
+	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("dangerouslySetInnerHTML", "property", "App.jsx", facts.LangJavaScript, false, 10, 10),
+		},
+		Imports: []facts.ImportFact{
+			imp("dompurify", "", "App.jsx", facts.LangJavaScript),
+		},
+	}
+	ev := findDangerousHTML(rule, fs)
+	// Sanitizer import is noted but doesn't suppress the symbol match
+	if len(ev) == 0 {
+		t.Error("expected evidence even with sanitizer import")
+	}
+}
+
+func TestFindDangerousHTML_SanitizeHTMLImport(t *testing.T) {
+	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("sanitize-html", "", "util.js", facts.LangJavaScript),
+		},
+	}
+	ev := findDangerousHTML(rule, fs)
+	// No dangerous symbols, just a sanitizer import
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence with only sanitizer import, got %d", len(ev))
+	}
+}
+
+func TestFindDangerousHTML_NonSanitizerImport(t *testing.T) {
+	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("react", "", "App.jsx", facts.LangJavaScript),
+		},
+	}
+	ev := findDangerousHTML(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for regular import, got %d", len(ev))
+	}
+}
+
+func TestFindDangerousHTML_ImportWrongLanguage(t *testing.T) {
+	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("dompurify", "", "main.go", facts.LangGo),
+		},
+	}
+	ev := findDangerousHTML(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for wrong language import, got %d", len(ev))
+	}
+}
+
+func TestFindDangerousHTML_InnerHTMLDirective(t *testing.T) {
+	rule := Rule{ID: "T-001", Languages: []string{"typescript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("[innerHTML]", "directive", "comp.ts", facts.LangTypeScript, false, 1, 1),
+		},
+	}
+	ev := findDangerousHTML(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for [innerHTML]")
+	}
+}
+
+// --- findEnvExposesSecret file loop branch ---
+
+func TestFindEnvExposesSecret_FileWithEnv(t *testing.T) {
+	rule := Rule{ID: "T-004", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact(".env.local", facts.LangJavaScript),
+		},
+	}
+	ev := findEnvExposesSecret(rule, fs)
+	// No symbols match, just file loop runs
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence without matching symbols, got %d", len(ev))
+	}
+}
+
+func TestFindEnvExposesSecret_FileWithoutEnv(t *testing.T) {
+	rule := Rule{ID: "T-004", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact("config.json", facts.LangJavaScript),
+		},
+	}
+	ev := findEnvExposesSecret(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence without .env file, got %d", len(ev))
+	}
+}
+
+// --- findFormValidation symbol: formValidation ---
+
+func TestFindFormValidation_FormValidationSymbol(t *testing.T) {
+	rule := Rule{ID: "T-010", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("formValidation", "function", "form.js", facts.LangJavaScript, false, 1, 5),
+		},
+	}
+	ev := findFormValidation(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for formValidation symbol")
+	}
+}
+
+// --- findAuthGuard: isAuthenticated ---
+
+func TestFindAuthGuard_IsAuthenticated(t *testing.T) {
+	rule := Rule{ID: "T-005", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("isAuthenticated", "function", "auth.js", facts.LangJavaScript, false, 1, 10),
+		},
+	}
+	ev := findAuthGuard(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for isAuthenticated symbol")
+	}
+}
+
+func TestFindAuthGuard_ImportWrongLanguage(t *testing.T) {
+	rule := Rule{ID: "T-005", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("next-auth", "", "auth.go", facts.LangGo),
+		},
+	}
+	ev := findAuthGuard(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for import wrong language, got %d", len(ev))
+	}
+}
+
+// --- findAPIErrorHandling: interceptor symbol ---
+
+func TestFindAPIErrorHandling_Interceptor(t *testing.T) {
+	rule := Rule{ID: "T-006", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("axiosInterceptor", "function", "api.js", facts.LangJavaScript, false, 1, 10),
+		},
+	}
+	ev := findAPIErrorHandling(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for interceptor symbol")
+	}
+}
+
+func TestFindAPIErrorHandling_SymbolWrongLanguage(t *testing.T) {
+	rule := Rule{ID: "T-006", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("ErrorBoundary", "class", "main.go", facts.LangGo, true, 1, 50),
+		},
+	}
+	ev := findAPIErrorHandling(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for symbol wrong language, got %d", len(ev))
+	}
+}
+
+// --- findCSPConfigured: symbol wrong language ---
+
+func TestFindCSPConfigured_SymbolWrongLanguage(t *testing.T) {
+	rule := Rule{ID: "T-007", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("cspConfig", "variable", "main.go", facts.LangGo, false, 1, 1),
+		},
+	}
+	ev := findCSPConfigured(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for symbol wrong language, got %d", len(ev))
+	}
+}
+
+// --- findFormValidation: symbol wrong language ---
+
+func TestFindFormValidation_SymbolWrongLanguage(t *testing.T) {
+	rule := Rule{ID: "T-010", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("useForm", "function", "main.go", facts.LangGo, false, 1, 10),
+		},
+	}
+	ev := findFormValidation(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for symbol wrong language, got %d", len(ev))
+	}
+}

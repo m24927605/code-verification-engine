@@ -1,0 +1,9 @@
+{
+  "rule_id": "FE-DEP-001",
+  "scenario": "pass",
+  "expected_status": "pass",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": true,
+  "expected_verification_level": "verified",
+  "description": "Lock file (package-lock.json) exists alongside package.json"
+}

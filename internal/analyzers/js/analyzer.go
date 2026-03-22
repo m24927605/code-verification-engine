@@ -68,6 +68,7 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		}
 		for _, m := range nextMethods {
 			if fact, err := facts.NewRouteFact(facts.LangJavaScript, relPath, facts.Span{Start: 1, End: 1}, m, routePath, "", nil); err == nil {
+				fact.Quality = facts.QualityHeuristic
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -79,23 +80,81 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 	isTest := isTestFile(relPath)
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
+	inBlockComment := false
+
+	// Track function scope for DataAccess caller enrichment
+	type jsFuncScope struct {
+		name  string
+		kind  string
+		depth int // brace depth when function was entered
+	}
+	var funcStack []jsFuncScope
+	braceDepth := 0
+
+	// Track imports for ImportsDirect enrichment
+	var allImports []string
+
+	// Index of first DataAccessFact added by this file
+	dataAccessStart := len(result.DataAccess)
 
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
+		// Multi-line comment tracking
+		if inBlockComment {
+			if idx := strings.Index(trimmed, "*/"); idx >= 0 {
+				inBlockComment = false
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "/*") {
+			if !strings.Contains(trimmed, "*/") {
+				inBlockComment = true
+			}
+			continue
+		}
+
+		// Skip single-line comments
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+
 		// ES imports
 		if imp := common.MatchESImport(trimmed); imp != "" {
+			allImports = append(allImports, imp)
 			if fact, err := facts.NewImportFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, imp, ""); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Imports = append(result.Imports, fact)
 			}
 		}
 
 		// require() imports
 		if imp := common.MatchRequireImport(trimmed); imp != "" {
+			allImports = append(allImports, imp)
 			if fact, err := facts.NewImportFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, imp, ""); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Imports = append(result.Imports, fact)
+			}
+		}
+
+		// Track function scopes via brace depth
+		if name, kind := common.MatchSymbolDecl(trimmed); name != "" && kind == "function" {
+			funcStack = append(funcStack, jsFuncScope{name: name, kind: kind, depth: braceDepth})
+		}
+		// Count braces for scope tracking
+		for _, ch := range line {
+			if ch == '{' {
+				braceDepth++
+			} else if ch == '}' {
+				braceDepth--
+				// Pop function scopes that have closed
+				for len(funcStack) > 0 && braceDepth <= funcStack[len(funcStack)-1].depth {
+					funcStack = funcStack[:len(funcStack)-1]
+				}
 			}
 		}
 
@@ -103,13 +162,21 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		if name, kind := common.MatchSymbolDecl(trimmed); name != "" {
 			exported := common.IsExported(trimmed)
 			if fact, err := facts.NewSymbolFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, name, kind, exported); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Symbols = append(result.Symbols, fact)
 			}
 		}
 
 		// Express routes
 		if method, path := common.MatchExpressRoute(trimmed); method != "" {
+			prov := facts.ProvenanceAST
+			if looksLikeStringLiteral(trimmed) {
+				prov = facts.ProvenanceHeuristic
+			}
 			if fact, err := facts.NewRouteFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = prov
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -117,6 +184,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify routes
 		if method, path, ok := common.ExtractFastifyRoute(trimmed); ok {
 			if fact, err := facts.NewRouteFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -124,6 +193,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify route objects
 		if url := common.ExtractFastifyRouteObj(trimmed); url != "" {
 			if fact, err := facts.NewRouteFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, "ANY", url, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -131,6 +202,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify register (plugin as middleware)
 		if plugin := common.ExtractFastifyRegister(trimmed); plugin != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, plugin, "fastify-plugin"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -138,6 +211,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify hooks
 		if hook := common.ExtractFastifyHook(trimmed); hook != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, hook, "fastify-hook"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -145,6 +220,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Koa routes
 		if method, path, ok := common.ExtractKoaRoute(trimmed); ok {
 			if fact, err := facts.NewRouteFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -152,6 +229,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Hapi routes
 		if method, path, ok := common.ExtractHapiRoute(trimmed); ok {
 			if fact, err := facts.NewRouteFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -159,6 +238,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Hapi extensions
 		if ext := common.ExtractHapiExt(trimmed); ext != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, ext, "hapi-ext"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -166,6 +247,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Hapi register
 		if plugin := common.ExtractHapiRegister(trimmed); plugin != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, plugin, "hapi-plugin"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -173,6 +256,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Express middleware (also catches Koa app.use)
 		if mw := common.MatchExpressMiddleware(trimmed); mw != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, mw, "express"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -180,6 +265,12 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Data access
 		if op, backend := common.MatchDataAccess(trimmed); op != "" {
 			if fact, err := facts.NewDataAccessFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, op, backend); err == nil {
+				fact.Quality = facts.QualityStructural
+				if len(funcStack) > 0 {
+					top := funcStack[len(funcStack)-1]
+					fact.CallerName = top.name
+					fact.CallerKind = top.kind
+				}
 				result.DataAccess = append(result.DataAccess, fact)
 			}
 		}
@@ -187,6 +278,8 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Secrets
 		if kind := common.MatchSecret(trimmed); kind != "" {
 			if fact, err := facts.NewSecretFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, kind, ""); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Secrets = append(result.Secrets, fact)
 			}
 		}
@@ -195,6 +288,7 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		if isTest {
 			if testName := matchTestDecl(trimmed); testName != "" {
 				if fact, err := facts.NewTestFact(facts.LangJavaScript, relPath, facts.Span{Start: lineNum, End: lineNum}, testName, "", ""); err == nil {
+					fact.Quality = facts.QualityStructural
 					result.Tests = append(result.Tests, fact)
 				}
 			}
@@ -212,8 +306,30 @@ func (a *JavaScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		return nil
 	}
 
+	// Enrich DataAccess facts with ImportsDirect
+	dbImportPatterns := []string{"sequelize", "prisma", "typeorm", "pg", "mysql", "mongodb", "mongoose", "knex"}
+	hasDBImport := false
+	for _, imp := range allImports {
+		impLower := strings.ToLower(imp)
+		for _, pattern := range dbImportPatterns {
+			if strings.Contains(impLower, pattern) {
+				hasDBImport = true
+				break
+			}
+		}
+		if hasDBImport {
+			break
+		}
+	}
+	if hasDBImport {
+		for i := dataAccessStart; i < len(result.DataAccess); i++ {
+			result.DataAccess[i].ImportsDirect = true
+		}
+	}
+
 	// File fact — only added if scan completed fully
 	if fact, err := facts.NewFileFact(facts.LangJavaScript, relPath, lineNum); err == nil {
+		fact.Quality = facts.QualityStructural
 		result.Files = append(result.Files, fact)
 	}
 
@@ -342,6 +458,23 @@ func findClosingBrace(lines []string, startIdx int) int {
 		}
 	}
 	return len(lines)
+}
+
+// looksLikeStringLiteral returns true if the trimmed line appears to contain
+// the relevant code pattern inside a string literal (e.g., const x = "app.get(...)").
+func looksLikeStringLiteral(trimmed string) bool {
+	for _, prefix := range []string{`= "`, `= '`, "= `"} {
+		idx := strings.Index(trimmed, prefix)
+		if idx >= 0 {
+			afterQuote := trimmed[idx+len(prefix):]
+			if strings.Contains(afterQuote, ".get(") || strings.Contains(afterQuote, ".post(") ||
+				strings.Contains(afterQuote, ".put(") || strings.Contains(afterQuote, ".delete(") ||
+				strings.Contains(afterQuote, ".patch(") || strings.Contains(afterQuote, ".use(") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isTestFile(path string) bool {

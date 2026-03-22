@@ -77,10 +77,46 @@ func (a *PythonAnalyzer) Extensions() []string {
 	return []string{".py"}
 }
 
+// isLineInTripleQuote tracks whether we are inside a triple-quoted string.
+// It returns true if the line should be skipped (inside triple-quote block).
+// The caller must pass a pointer to inTripleQuote state that persists across lines.
+func isTripleQuoteLine(line string, inTripleQuote *bool) bool {
+	trimmed := strings.TrimSpace(line)
+
+	if *inTripleQuote {
+		// Check if this line ends the triple-quote
+		if strings.Contains(trimmed, `"""`) || strings.Contains(trimmed, `'''`) {
+			*inTripleQuote = false
+		}
+		return true
+	}
+
+	// Check if this line starts a triple-quote
+	for _, delim := range []string{`"""`, `'''`} {
+		idx := strings.Index(trimmed, delim)
+		if idx >= 0 {
+			rest := trimmed[idx+3:]
+			// Check if the closing triple-quote is on the same line
+			if strings.Contains(rest, delim) {
+				// Single-line triple-quoted string — skip only if it's the entire value
+				// (e.g., docstring = """..."""). Do NOT skip if it's an assignment like
+				// SECRET_KEY = "value" which doesn't have triple quotes.
+				return false
+			}
+			// Multi-line triple-quote starts here
+			*inTripleQuote = true
+			return true
+		}
+	}
+	return false
+}
+
 // Analyze parses Python files and extracts normalized facts.
 func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.AnalysisResult, error) {
 	result := &analyzers.AnalysisResult{}
 	result.TypeGraph = typegraph.New()
+
+	useAST := PythonASTAvailable()
 
 	for _, relPath := range files {
 		absPath := filepath.Join(dir, relPath)
@@ -93,13 +129,28 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 			continue
 		}
 
+		fullSource := strings.Join(lines, "\n")
+
 		// FileFact
 		ff, err := facts.NewFileFact(facts.LangPython, relPath, len(lines))
 		if err != nil {
 			continue
 		}
+		ff.Quality = facts.QualityHeuristic
 		result.Files = append(result.Files, ff)
 
+		// Try AST path first
+		if useAST {
+			astResult, astErr := ParsePythonAST(fullSource)
+			if astErr == nil && astResult.Error == nil {
+				a.convertASTToFacts(relPath, lines, fullSource, astResult, result)
+				// TypeGraph extraction (always from regex)
+				extractPyTypeGraph(lines, relPath, result.TypeGraph)
+				continue
+			}
+		}
+
+		// Regex fallback path with comment/triple-quote filtering
 		isTestFile := isTestFileName(relPath)
 		hasSQLAlchemyImport := false
 		hasPsycopg2Import := false
@@ -110,9 +161,20 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 		// Track Depends() references for middleware detection
 		dependsRefs := make(map[string]bool)
 
+		inTripleQuote := false
 		for i, line := range lines {
 			lineNum := i + 1
 			trimmed := strings.TrimSpace(line)
+
+			// Skip lines inside triple-quoted strings
+			if isTripleQuoteLine(line, &inTripleQuote) {
+				continue
+			}
+
+			// Skip comment lines
+			if strings.HasPrefix(trimmed, "#") {
+				continue
+			}
 
 			// Imports
 			if m := fromImportRe.FindStringSubmatch(trimmed); m != nil {
@@ -133,6 +195,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 					span := facts.Span{Start: lineNum, End: lineNum}
 					impFact, err := facts.NewImportFact(facts.LangPython, relPath, span, module, alias)
 					if err == nil {
+						impFact.Quality = facts.QualityHeuristic
+						impFact.Provenance = facts.ProvenanceHeuristic
 						result.Imports = append(result.Imports, impFact)
 					}
 					_ = name
@@ -165,6 +229,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 					span := facts.Span{Start: lineNum, End: lineNum}
 					impFact, err := facts.NewImportFact(facts.LangPython, relPath, span, importPath, alias)
 					if err == nil {
+						impFact.Quality = facts.QualityHeuristic
+						impFact.Provenance = facts.ProvenanceHeuristic
 						result.Imports = append(result.Imports, impFact)
 					}
 				}
@@ -198,6 +264,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				span := facts.Span{Start: lineNum, End: lineNum}
 				rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, method, path, handler, nil)
 				if err == nil {
+					rf.Quality = facts.QualityHeuristic
+					rf.Provenance = facts.ProvenanceHeuristic
 					result.Routes = append(result.Routes, rf)
 				}
 			}
@@ -219,6 +287,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				span := facts.Span{Start: lineNum, End: lineNum}
 				rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", path, handler, nil)
 				if err == nil {
+					rf.Quality = facts.QualityHeuristic
+					rf.Provenance = facts.ProvenanceHeuristic
 					result.Routes = append(result.Routes, rf)
 				}
 			}
@@ -229,6 +299,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 					span := facts.Span{Start: lineNum, End: lineNum}
 					rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", m[1], "", nil)
 					if err == nil {
+						rf.Quality = facts.QualityHeuristic
+						rf.Provenance = facts.ProvenanceHeuristic
 						result.Routes = append(result.Routes, rf)
 					}
 				}
@@ -239,6 +311,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				span := facts.Span{Start: lineNum, End: lineNum}
 				rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", m[1], "", nil)
 				if err == nil {
+					rf.Quality = facts.QualityHeuristic
+					rf.Provenance = facts.ProvenanceHeuristic
 					result.Routes = append(result.Routes, rf)
 				}
 			}
@@ -248,6 +322,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				span := facts.Span{Start: lineNum, End: lineNum}
 				mf, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, m[1], "starlette")
 				if err == nil {
+					mf.Quality = facts.QualityHeuristic
+					mf.Provenance = facts.ProvenanceHeuristic
 					result.Middlewares = append(result.Middlewares, mf)
 				}
 			}
@@ -260,6 +336,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 					span := facts.Span{Start: lineNum, End: lineNum}
 					mf, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, name, "django")
 					if err == nil {
+						mf.Quality = facts.QualityHeuristic
+						mf.Provenance = facts.ProvenanceHeuristic
 						result.Middlewares = append(result.Middlewares, mf)
 					}
 				}
@@ -281,6 +359,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				exported := !strings.HasPrefix(name, "_")
 				sf, err := facts.NewSymbolFact(facts.LangPython, relPath, span, name, "function", exported)
 				if err == nil {
+					sf.Quality = facts.QualityHeuristic
+					sf.Provenance = facts.ProvenanceHeuristic
 					result.Symbols = append(result.Symbols, sf)
 				}
 
@@ -288,6 +368,7 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				if isTestFile && strings.HasPrefix(name, "test_") {
 					tf, err := facts.NewTestFact(facts.LangPython, relPath, span, name, "", "")
 					if err == nil {
+						tf.Quality = facts.QualityHeuristic
 						result.Tests = append(result.Tests, tf)
 					}
 				}
@@ -302,6 +383,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				exported := !strings.HasPrefix(name, "_")
 				sf, err := facts.NewSymbolFact(facts.LangPython, relPath, span, name, "class", exported)
 				if err == nil {
+					sf.Quality = facts.QualityHeuristic
+					sf.Provenance = facts.ProvenanceHeuristic
 					result.Symbols = append(result.Symbols, sf)
 				}
 
@@ -316,6 +399,7 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 								mSpan := facts.Span{Start: j + 1, End: methodEnd}
 								tf, err := facts.NewTestFact(facts.LangPython, relPath, mSpan, mMethod[2], "", "")
 								if err == nil {
+									tf.Quality = facts.QualityHeuristic
 									result.Tests = append(result.Tests, tf)
 								}
 							}
@@ -347,6 +431,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 				span := facts.Span{Start: lineNum, End: lineNum}
 				sf, err := facts.NewSecretFact(facts.LangPython, relPath, span, "hardcoded_secret", varName)
 				if err == nil {
+					sf.Quality = facts.QualityHeuristic
+					sf.Provenance = facts.ProvenanceHeuristic
 					result.Secrets = append(result.Secrets, sf)
 				}
 			}
@@ -360,6 +446,7 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 					span := facts.Span{Start: i + 1, End: i + 1}
 					da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, "session", "sqlalchemy")
 					if err == nil {
+						da.Quality = facts.QualityHeuristic
 						result.DataAccess = append(result.DataAccess, da)
 					}
 					break // One per file is enough
@@ -370,6 +457,7 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 			span := facts.Span{Start: 1, End: 1}
 			da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, "cursor", "psycopg2")
 			if err == nil {
+				da.Quality = facts.QualityHeuristic
 				result.DataAccess = append(result.DataAccess, da)
 			}
 		}
@@ -381,6 +469,7 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 					span := facts.Span{Start: i + 1, End: i + 1}
 					da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, m[1], "django-orm")
 					if err == nil {
+						da.Quality = facts.QualityHeuristic
 						result.DataAccess = append(result.DataAccess, da)
 					}
 				}
@@ -392,6 +481,7 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 			span := facts.Span{Start: 1, End: 1}
 			da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, "query", "tortoise")
 			if err == nil {
+				da.Quality = facts.QualityHeuristic
 				result.DataAccess = append(result.DataAccess, da)
 			}
 		}
@@ -406,6 +496,7 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 						span := facts.Span{Start: i + 1, End: endLine}
 						tf, err := facts.NewTestFact(facts.LangPython, relPath, span, m[2], "", "")
 						if err == nil {
+							tf.Quality = facts.QualityHeuristic
 							result.Tests = append(result.Tests, tf)
 						}
 					}
@@ -418,6 +509,8 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 			span := facts.Span{Start: 1, End: 1}
 			mf, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, name, "fastapi_depends")
 			if err == nil {
+				mf.Quality = facts.QualityHeuristic
+				mf.Provenance = facts.ProvenanceHeuristic
 				result.Middlewares = append(result.Middlewares, mf)
 			}
 		}
@@ -426,7 +519,234 @@ func (a *PythonAnalyzer) Analyze(dir string, files []string) (*analyzers.Analysi
 		extractPyTypeGraph(lines, relPath, result.TypeGraph)
 	}
 
+	// Project global middlewares into route Middlewares
+	projectGlobalMiddlewares(result)
+
 	return result, nil
+}
+
+// convertASTToFacts converts AST parsing results into facts with ast_derived provenance.
+func (a *PythonAnalyzer) convertASTToFacts(relPath string, lines []string, fullSource string, ast *ASTResult, result *analyzers.AnalysisResult) {
+	// Imports
+	for _, imp := range ast.Imports {
+		span := facts.Span{Start: imp.Line, End: imp.Line}
+		f, err := facts.NewImportFact(facts.LangPython, relPath, span, imp.Module, imp.Alias)
+		if err == nil {
+			f.Quality = facts.QualityStructural
+			f.Provenance = facts.ProvenanceAST
+			result.Imports = append(result.Imports, f)
+		}
+	}
+
+	// Symbols
+	for _, sym := range ast.Symbols {
+		endLine := sym.EndLine
+		if endLine == 0 {
+			endLine = sym.Line
+		}
+		span := facts.Span{Start: sym.Line, End: endLine}
+		f, err := facts.NewSymbolFact(facts.LangPython, relPath, span, sym.Name, sym.Kind, sym.Exported)
+		if err == nil {
+			f.Quality = facts.QualityStructural
+			f.Provenance = facts.ProvenanceAST
+			result.Symbols = append(result.Symbols, f)
+		}
+	}
+
+	// Routes — include per-route Depends and decorator middlewares from AST
+	for _, rt := range ast.Routes {
+		span := facts.Span{Start: rt.Line, End: rt.Line}
+		mw := rt.Middlewares
+		if mw == nil {
+			mw = []string{}
+		}
+		f, err := facts.NewRouteFact(facts.LangPython, relPath, span, rt.Method, rt.Path, rt.Handler, mw)
+		if err == nil {
+			f.Quality = facts.QualityStructural
+			f.Provenance = facts.ProvenanceAST
+			result.Routes = append(result.Routes, f)
+		}
+	}
+
+	// Middlewares (global add_middleware, before_request, Depends refs)
+	for _, mw := range ast.Middlewares {
+		span := facts.Span{Start: mw.Line, End: mw.Line}
+		f, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, mw.Name, mw.Framework)
+		if err == nil {
+			f.Quality = facts.QualityStructural
+			f.Provenance = facts.ProvenanceAST
+			result.Middlewares = append(result.Middlewares, f)
+		}
+	}
+
+	// DataAccess — set CallerName and ImportsDirect
+	// Determine which DB packages are imported
+	hasSQLAlchemy := false
+	hasPsycopg2 := false
+	for _, imp := range ast.Imports {
+		if strings.HasPrefix(imp.Module, "sqlalchemy") {
+			hasSQLAlchemy = true
+		}
+		if strings.HasPrefix(imp.Module, "psycopg2") {
+			hasPsycopg2 = true
+		}
+	}
+	for _, da := range ast.DataAccess {
+		span := facts.Span{Start: da.Line, End: da.Line}
+		f, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, da.Operation, da.Backend)
+		if err == nil {
+			f.Quality = facts.QualityStructural
+			if da.Caller != "" {
+				f.CallerName = da.Caller
+			}
+			// Set ImportsDirect based on matching imports
+			switch da.Backend {
+			case "sqlalchemy":
+				f.ImportsDirect = hasSQLAlchemy
+			case "psycopg2":
+				f.ImportsDirect = hasPsycopg2
+			default:
+				f.ImportsDirect = true
+			}
+			result.DataAccess = append(result.DataAccess, f)
+		}
+	}
+
+	// Secrets
+	for _, s := range ast.Secrets {
+		span := facts.Span{Start: s.Line, End: s.Line}
+		f, err := facts.NewSecretFact(facts.LangPython, relPath, span, "hardcoded_secret", s.Name)
+		if err == nil {
+			f.Quality = facts.QualityStructural
+			f.Provenance = facts.ProvenanceAST
+			result.Secrets = append(result.Secrets, f)
+		}
+	}
+
+	// Test facts from regex (AST doesn't extract these)
+	isTestFile := isTestFileName(relPath)
+	hasDjangoTestImport := false
+
+	// Supplementary regex pass for patterns not covered by the AST script:
+	// Django routes (path/url/re_path), Starlette Route(), Django MIDDLEWARE settings
+	for i, line := range lines {
+		lineNum := i + 1
+		trimmed := strings.TrimSpace(line)
+
+		// Django test import
+		if djangoTestImportRe.MatchString(trimmed) {
+			hasDjangoTestImport = true
+		}
+
+		// Django route patterns: path(), url(), re_path()
+		for _, re := range []*regexp.Regexp{djangoPathRe, djangoUrlRe, djangoRePathRe} {
+			if m := re.FindStringSubmatch(trimmed); m != nil {
+				span := facts.Span{Start: lineNum, End: lineNum}
+				rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", m[1], "", nil)
+				if err == nil {
+					rf.Quality = facts.QualityStructural
+					rf.Provenance = facts.ProvenanceAST
+					result.Routes = append(result.Routes, rf)
+				}
+			}
+		}
+
+		// Starlette Route() pattern
+		if m := starletteRouteRe.FindStringSubmatch(trimmed); m != nil {
+			span := facts.Span{Start: lineNum, End: lineNum}
+			rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", m[1], "", nil)
+			if err == nil {
+				rf.Quality = facts.QualityStructural
+				rf.Provenance = facts.ProvenanceAST
+				result.Routes = append(result.Routes, rf)
+			}
+		}
+
+		// Django MIDDLEWARE list entries
+		if djangoMiddlewareRe.MatchString(trimmed) && strings.Contains(filepath.Base(relPath), "settings") {
+			matches := djangoMiddlewareRe.FindAllString(trimmed, -1)
+			for _, match := range matches {
+				name := strings.Trim(match, `'"`)
+				span := facts.Span{Start: lineNum, End: lineNum}
+				mf, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, name, "django")
+				if err == nil {
+					mf.Quality = facts.QualityStructural
+					mf.Provenance = facts.ProvenanceAST
+					result.Middlewares = append(result.Middlewares, mf)
+				}
+			}
+		}
+
+		// Test functions
+		if isTestFile {
+			if m := funcDefRe.FindStringSubmatch(line); m != nil {
+				name := m[2]
+				if strings.HasPrefix(name, "test_") {
+					indent := m[1]
+					endLine := findBlockEnd(lines, i, len(indent))
+					span := facts.Span{Start: i + 1, End: endLine}
+					tf, err := facts.NewTestFact(facts.LangPython, relPath, span, name, "", "")
+					if err == nil {
+						tf.Quality = facts.QualityStructural
+						result.Tests = append(result.Tests, tf)
+					}
+				}
+			}
+		}
+	}
+
+	// Django TestCase detection
+	if hasDjangoTestImport && isTestFile {
+		for i, line := range lines {
+			if m := classDefRe.FindStringSubmatch(line); m != nil {
+				if strings.Contains(line, "TestCase") || strings.HasPrefix(m[2], "Test") {
+					indent := m[1]
+					endLine := findBlockEnd(lines, i, len(indent))
+					span := facts.Span{Start: i + 1, End: endLine}
+					tf, err := facts.NewTestFact(facts.LangPython, relPath, span, m[2], "", "")
+					if err == nil {
+						tf.Quality = facts.QualityStructural
+						result.Tests = append(result.Tests, tf)
+					}
+				}
+			}
+		}
+	}
+}
+
+// projectGlobalMiddlewares projects global middlewares (starlette add_middleware,
+// flask_before_request) into each route's Middlewares list.
+func projectGlobalMiddlewares(result *analyzers.AnalysisResult) {
+	// Collect global middleware names
+	var globalMW []string
+	for _, mw := range result.Middlewares {
+		if mw.Kind == "starlette" || mw.Kind == "flask_before_request" {
+			globalMW = append(globalMW, mw.Name)
+		}
+	}
+	if len(globalMW) == 0 {
+		return
+	}
+
+	// Project into each route
+	for i := range result.Routes {
+		if result.Routes[i].Middlewares == nil {
+			result.Routes[i].Middlewares = []string{}
+		}
+		for _, name := range globalMW {
+			// Avoid duplicates
+			found := false
+			for _, existing := range result.Routes[i].Middlewares {
+				if existing == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				result.Routes[i].Middlewares = append(result.Routes[i].Middlewares, name)
+			}
+		}
+	}
 }
 
 func isTestFileName(path string) bool {
@@ -475,6 +795,370 @@ func countIndent(line string) int {
 		}
 	}
 	return count
+}
+
+// analyzeFileRegex performs regex-based analysis on pre-read lines.
+// This is the core regex extraction logic, callable independently of file I/O.
+func (a *PythonAnalyzer) analyzeFileRegex(relPath string, lines []string, fullSource string, result *analyzers.AnalysisResult) {
+	isTestFile := isTestFileName(relPath)
+	hasSQLAlchemyImport := false
+	hasPsycopg2Import := false
+	hasDjangoOrmImport := false
+	hasTortoiseImport := false
+	hasDjangoTestImport := false
+
+	// Track Depends() references for middleware detection
+	dependsRefs := make(map[string]bool)
+
+	for i, line := range lines {
+		lineNum := i + 1
+		trimmed := strings.TrimSpace(line)
+
+		// Skip comment lines
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// Imports
+		if m := fromImportRe.FindStringSubmatch(trimmed); m != nil {
+			module := m[1]
+			imported := strings.Split(m[2], ",")
+			for _, imp := range imported {
+				imp = strings.TrimSpace(imp)
+				if imp == "" {
+					continue
+				}
+				parts := strings.Fields(imp)
+				alias := ""
+				if len(parts) >= 3 && parts[1] == "as" {
+					alias = parts[2]
+				}
+				span := facts.Span{Start: lineNum, End: lineNum}
+				impFact, err := facts.NewImportFact(facts.LangPython, relPath, span, module, alias)
+				if err == nil {
+					impFact.Quality = facts.QualityHeuristic
+					result.Imports = append(result.Imports, impFact)
+				}
+			}
+			if sqlalchemyImportRe.MatchString(trimmed) {
+				hasSQLAlchemyImport = true
+			}
+			if strings.Contains(trimmed, "django.db") {
+				hasDjangoOrmImport = true
+			}
+			if tortoiseImportRe.MatchString(trimmed) {
+				hasTortoiseImport = true
+			}
+			if djangoTestImportRe.MatchString(trimmed) {
+				hasDjangoTestImport = true
+			}
+		} else if m := importRe.FindStringSubmatch(trimmed); m != nil {
+			modules := strings.Split(m[1], ",")
+			for _, mod := range modules {
+				mod = strings.TrimSpace(mod)
+				if mod == "" {
+					continue
+				}
+				parts := strings.Fields(mod)
+				importPath := parts[0]
+				alias := ""
+				if len(parts) >= 3 && parts[1] == "as" {
+					alias = parts[2]
+				}
+				span := facts.Span{Start: lineNum, End: lineNum}
+				impFact, err := facts.NewImportFact(facts.LangPython, relPath, span, importPath, alias)
+				if err == nil {
+					impFact.Quality = facts.QualityHeuristic
+					result.Imports = append(result.Imports, impFact)
+				}
+			}
+			if sqlalchemyImportRe.MatchString(trimmed) {
+				hasSQLAlchemyImport = true
+			}
+			if psycopg2ImportRe.MatchString(trimmed) {
+				hasPsycopg2Import = true
+			}
+			if tortoiseImportRe.MatchString(trimmed) {
+				hasTortoiseImport = true
+			}
+		}
+
+		// FastAPI route decorators
+		if m := fastapiRouteRe.FindStringSubmatch(trimmed); m != nil {
+			method := strings.ToUpper(m[1])
+			path := m[2]
+			handler := ""
+			for j := i + 1; j < len(lines); j++ {
+				nextTrimmed := strings.TrimSpace(lines[j])
+				if nextTrimmed == "" {
+					continue
+				}
+				if fm := funcDefRe.FindStringSubmatch(lines[j]); fm != nil {
+					handler = fm[2]
+				}
+				break
+			}
+			span := facts.Span{Start: lineNum, End: lineNum}
+			rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, method, path, handler, nil)
+			if err == nil {
+				rf.Quality = facts.QualityHeuristic
+				result.Routes = append(result.Routes, rf)
+			}
+		}
+
+		// Flask route decorators
+		if m := flaskRouteRe.FindStringSubmatch(trimmed); m != nil {
+			path := m[1]
+			handler := ""
+			for j := i + 1; j < len(lines); j++ {
+				nextTrimmed := strings.TrimSpace(lines[j])
+				if nextTrimmed == "" {
+					continue
+				}
+				if fm := funcDefRe.FindStringSubmatch(lines[j]); fm != nil {
+					handler = fm[2]
+				}
+				break
+			}
+			span := facts.Span{Start: lineNum, End: lineNum}
+			rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", path, handler, nil)
+			if err == nil {
+				rf.Quality = facts.QualityHeuristic
+				result.Routes = append(result.Routes, rf)
+			}
+		}
+
+		// Django route patterns: path(), url(), re_path()
+		for _, re := range []*regexp.Regexp{djangoPathRe, djangoUrlRe, djangoRePathRe} {
+			if m := re.FindStringSubmatch(trimmed); m != nil {
+				span := facts.Span{Start: lineNum, End: lineNum}
+				rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", m[1], "", nil)
+				if err == nil {
+					rf.Quality = facts.QualityHeuristic
+					result.Routes = append(result.Routes, rf)
+				}
+			}
+		}
+
+		// Starlette Route() pattern
+		if m := starletteRouteRe.FindStringSubmatch(trimmed); m != nil {
+			span := facts.Span{Start: lineNum, End: lineNum}
+			rf, err := facts.NewRouteFact(facts.LangPython, relPath, span, "ANY", m[1], "", nil)
+			if err == nil {
+				rf.Quality = facts.QualityHeuristic
+				result.Routes = append(result.Routes, rf)
+			}
+		}
+
+		// Starlette add_middleware() pattern
+		if m := addMiddlewareRe.FindStringSubmatch(trimmed); m != nil {
+			span := facts.Span{Start: lineNum, End: lineNum}
+			mf, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, m[1], "starlette")
+			if err == nil {
+				mf.Quality = facts.QualityHeuristic
+				result.Middlewares = append(result.Middlewares, mf)
+			}
+		}
+
+		// Django MIDDLEWARE list entries
+		if djangoMiddlewareRe.MatchString(trimmed) && strings.Contains(filepath.Base(relPath), "settings") {
+			matches := djangoMiddlewareRe.FindAllString(trimmed, -1)
+			for _, match := range matches {
+				name := strings.Trim(match, `'"`)
+				span := facts.Span{Start: lineNum, End: lineNum}
+				mf, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, name, "django")
+				if err == nil {
+					mf.Quality = facts.QualityHeuristic
+					result.Middlewares = append(result.Middlewares, mf)
+				}
+			}
+		}
+
+		// Depends() middleware references
+		if matches := dependsRe.FindAllStringSubmatch(trimmed, -1); matches != nil {
+			for _, m := range matches {
+				dependsRefs[m[1]] = true
+			}
+		}
+
+		// Functions
+		if m := funcDefRe.FindStringSubmatch(line); m != nil {
+			indent := m[1]
+			name := m[2]
+			endLine := findBlockEnd(lines, i, len(indent))
+			span := facts.Span{Start: lineNum, End: endLine}
+			exported := !strings.HasPrefix(name, "_")
+			sf, err := facts.NewSymbolFact(facts.LangPython, relPath, span, name, "function", exported)
+			if err == nil {
+				sf.Quality = facts.QualityHeuristic
+				result.Symbols = append(result.Symbols, sf)
+			}
+
+			// TestFact: test_ prefixed functions in test files
+			if isTestFile && strings.HasPrefix(name, "test_") {
+				tf, err := facts.NewTestFact(facts.LangPython, relPath, span, name, "", "")
+				if err == nil {
+					tf.Quality = facts.QualityHeuristic
+					result.Tests = append(result.Tests, tf)
+				}
+			}
+		}
+
+		// Classes
+		if m := classDefRe.FindStringSubmatch(line); m != nil {
+			indent := m[1]
+			name := m[2]
+			endLine := findBlockEnd(lines, i, len(indent))
+			span := facts.Span{Start: lineNum, End: endLine}
+			exported := !strings.HasPrefix(name, "_")
+			sf, err := facts.NewSymbolFact(facts.LangPython, relPath, span, name, "class", exported)
+			if err == nil {
+				sf.Quality = facts.QualityHeuristic
+				result.Symbols = append(result.Symbols, sf)
+			}
+
+			// Check for test methods inside test classes
+			if isTestFile && strings.HasPrefix(name, "Test") {
+				baseIndent := len(indent)
+				for j := i + 1; j < len(lines); j++ {
+					if mMethod := funcDefRe.FindStringSubmatch(lines[j]); mMethod != nil {
+						methodIndent := len(mMethod[1])
+						if methodIndent > baseIndent && strings.HasPrefix(mMethod[2], "test_") {
+							methodEnd := findBlockEnd(lines, j, methodIndent)
+							mSpan := facts.Span{Start: j + 1, End: methodEnd}
+							tf, err := facts.NewTestFact(facts.LangPython, relPath, mSpan, mMethod[2], "", "")
+							if err == nil {
+								tf.Quality = facts.QualityHeuristic
+								result.Tests = append(result.Tests, tf)
+							}
+						}
+					}
+					// Stop if we leave the class
+					if j > i && len(strings.TrimSpace(lines[j])) > 0 {
+						lineIndent := countIndent(lines[j])
+						if lineIndent <= baseIndent && !strings.HasPrefix(strings.TrimSpace(lines[j]), "#") {
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Secret detection
+		if m := secretAssignRe.FindStringSubmatch(trimmed); m != nil {
+			varName := m[1]
+			// Skip env var lookups like os.environ.get
+			if strings.Contains(trimmed, "os.environ") || strings.Contains(trimmed, "os.getenv") {
+				continue
+			}
+			// Skip DEBUG or non-sensitive names
+			if strings.EqualFold(varName, "DEBUG") {
+				continue
+			}
+			span := facts.Span{Start: lineNum, End: lineNum}
+			sf, err := facts.NewSecretFact(facts.LangPython, relPath, span, "hardcoded_secret", varName)
+			if err == nil {
+				sf.Quality = facts.QualityHeuristic
+				result.Secrets = append(result.Secrets, sf)
+			}
+		}
+	}
+
+	// Data access detection based on imports
+	if hasSQLAlchemyImport {
+		for i, line := range lines {
+			if sqlalchemyUsageRe.MatchString(line) {
+				span := facts.Span{Start: i + 1, End: i + 1}
+				da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, "session", "sqlalchemy")
+				if err == nil {
+					da.Quality = facts.QualityHeuristic
+					da.ImportsDirect = true
+					da.CallerName = findCallerAtLine(lines, i)
+					result.DataAccess = append(result.DataAccess, da)
+				}
+				break
+			}
+		}
+	}
+	if hasPsycopg2Import {
+		span := facts.Span{Start: 1, End: 1}
+		da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, "cursor", "psycopg2")
+		if err == nil {
+			da.Quality = facts.QualityHeuristic
+			da.ImportsDirect = true
+			result.DataAccess = append(result.DataAccess, da)
+		}
+	}
+
+	// Django ORM detection
+	if hasDjangoOrmImport {
+		for i, line := range lines {
+			if m := djangoOrmRe.FindStringSubmatch(line); m != nil {
+				span := facts.Span{Start: i + 1, End: i + 1}
+				da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, m[1], "django-orm")
+				if err == nil {
+					da.Quality = facts.QualityHeuristic
+					da.ImportsDirect = true
+					da.CallerName = findCallerAtLine(lines, i)
+					result.DataAccess = append(result.DataAccess, da)
+				}
+			}
+		}
+	}
+
+	// Tortoise ORM detection
+	if hasTortoiseImport {
+		span := facts.Span{Start: 1, End: 1}
+		da, err := facts.NewDataAccessFact(facts.LangPython, relPath, span, "query", "tortoise")
+		if err == nil {
+			da.Quality = facts.QualityHeuristic
+			da.ImportsDirect = true
+			result.DataAccess = append(result.DataAccess, da)
+		}
+	}
+
+	// Django TestCase detection
+	if hasDjangoTestImport && isTestFile {
+		for i, line := range lines {
+			if m := classDefRe.FindStringSubmatch(line); m != nil {
+				if strings.Contains(line, "TestCase") || strings.HasPrefix(m[2], "Test") {
+					indent := m[1]
+					endLine := findBlockEnd(lines, i, len(indent))
+					span := facts.Span{Start: i + 1, End: endLine}
+					tf, err := facts.NewTestFact(facts.LangPython, relPath, span, m[2], "", "")
+					if err == nil {
+						tf.Quality = facts.QualityHeuristic
+						result.Tests = append(result.Tests, tf)
+					}
+				}
+			}
+		}
+	}
+
+	// Middleware facts from Depends() references
+	for name := range dependsRefs {
+		span := facts.Span{Start: 1, End: 1}
+		mf, err := facts.NewMiddlewareFact(facts.LangPython, relPath, span, name, "fastapi_depends")
+		if err == nil {
+			mf.Quality = facts.QualityHeuristic
+			result.Middlewares = append(result.Middlewares, mf)
+		}
+	}
+
+	// TypeGraph extraction
+	extractPyTypeGraph(lines, relPath, result.TypeGraph)
+
+	_ = fullSource
+}
+
+// findCallerAtLine walks backwards from lineIdx to find the enclosing function name.
+func findCallerAtLine(lines []string, lineIdx int) string {
+	for i := lineIdx; i >= 0; i-- {
+		if m := funcDefRe.FindStringSubmatch(lines[i]); m != nil {
+			return m[2]
+		}
+	}
+	return ""
 }
 
 func extractPyTypeGraph(lines []string, relPath string, tg *typegraph.TypeGraph) {

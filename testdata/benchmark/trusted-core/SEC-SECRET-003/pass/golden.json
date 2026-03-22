@@ -1,0 +1,9 @@
+{
+  "rule_id": "SEC-SECRET-003",
+  "scenario": "pass",
+  "expected_status": "pass",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "No .env file present — secrets loaded from environment variables"
+}

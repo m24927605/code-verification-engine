@@ -4,12 +4,15 @@ import "fmt"
 
 // SymbolFact represents an extracted symbol (function, method, class, etc.).
 type SymbolFact struct {
-	Language Language `json:"language"`
-	File     string   `json:"file"`
-	Span     Span     `json:"span"`
-	Name     string   `json:"symbol"`
-	Kind     string   `json:"kind"`
-	Exported bool     `json:"exported"`
+	Language Language    `json:"language"`
+	File     string      `json:"file"`
+	Span     Span        `json:"span"`
+	Name     string      `json:"symbol"`
+	Kind     string      `json:"kind"`
+	Exported bool        `json:"exported"`
+	Quality    FactQuality    `json:"quality,omitempty"`
+	Provenance FactProvenance `json:"provenance,omitempty"`
+	IsMutable  bool           `json:"is_mutable,omitempty"`
 }
 
 // NewSymbolFact creates a validated SymbolFact.

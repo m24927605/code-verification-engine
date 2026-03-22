@@ -1,0 +1,9 @@
+{
+  "rule_id": "FE-DEP-001",
+  "scenario": "false-positive-guard",
+  "expected_status": "pass",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": true,
+  "expected_verification_level": "verified",
+  "description": "yarn.lock should be recognized as a valid lockfile — not just package-lock.json"
+}

@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+// Exported Python regex patterns for use by structural extractors.
+// These are defined here (in common) so the structural_extract.go file
+// can apply them on structurally-filtered source without importing the
+// python analyzer package (which would create a circular dependency).
+var (
+	fromImportReExported    = regexp.MustCompile(`^from\s+(\S+)\s+import\s+(.+)`)
+	importReExported        = regexp.MustCompile(`^import\s+(.+)`)
+	fastapiRouteReExported  = regexp.MustCompile(`@\w+\.(get|post|put|delete|patch)\s*\(\s*"([^"]+)"`)
+	flaskRouteReExported    = regexp.MustCompile(`@\w+\.route\s*\(\s*"([^"]+)"`)
+	secretAssignReExported  = regexp.MustCompile(`(?i)^(\w*(?:SECRET|PASSWORD|PASSWD|TOKEN|API_KEY|APIKEY|CREDENTIAL|DATABASE_URL)\w*)\s*=\s*["']([^"']+)["']`)
+)
+
 var (
 	esImportRe      = regexp.MustCompile(`^import\s+(?:type\s+)?(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s+)?['"]([^'"]+)['"]`)
 	requireImportRe = regexp.MustCompile(`(?:const|let|var)\s+(?:\{[^}]*\}|\w+)\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)`)
@@ -29,12 +41,32 @@ var (
 	passwordRe  = regexp.MustCompile(`(?i)(?:const|let|var)\s+\w*(?:password|passwd|pwd)\w*\s*=\s*["']([^"']{4,})["']`)
 	apiKeyRe    = regexp.MustCompile(`(?i)(?:const|let|var)\s+\w*(?:api_key|apikey|api_secret)\w*\s*=\s*["']([^"']{8,})["']`)
 
+	// Browser storage patterns (localStorage/sessionStorage)
+	localStorageSetRe   = regexp.MustCompile(`(localStorage|sessionStorage)\.(setItem|getItem|removeItem)\s*\(`)
+	localStorageDirectRe = regexp.MustCompile(`(localStorage|sessionStorage)\s*\[`)
+
 	// NestJS patterns
 	nestControllerRe = regexp.MustCompile(`@Controller\s*\(\s*['"]([^'"]*)['"]`)
 	nestRouteRe      = regexp.MustCompile(`@(Get|Post|Put|Delete|Patch)\s*\(\s*['"]?([^'")\s]*)`)
 	nestGuardRe      = regexp.MustCompile(`@UseGuards\s*\(\s*(\w+)`)
 	nestInterceptorRe = regexp.MustCompile(`@UseInterceptors\s*\(\s*(\w+)`)
 	nestInjectRepoRe  = regexp.MustCompile(`@InjectRepository\s*\(\s*(\w+)`)
+
+	// NestJS enableCors detection
+	nestEnableCorsRe = regexp.MustCompile(`(?:app|server)\s*\.\s*enableCors\s*\(`)
+	nestCorsOriginRe = regexp.MustCompile(`origin\s*:\s*(true|'\*'|"\*")`)
+
+	// NestJS provider registration (APP_INTERCEPTOR, APP_FILTER, APP_GUARD, APP_PIPE)
+	nestAppProviderRe  = regexp.MustCompile(`(?:APP_INTERCEPTOR|APP_FILTER|APP_GUARD|APP_PIPE)`)
+	nestGlobalUseRe    = regexp.MustCompile(`(?:useGlobalInterceptors|useGlobalFilters|useGlobalGuards|useGlobalPipes)\s*\(`)
+	nestConsumerApplyRe = regexp.MustCompile(`consumer\s*\.\s*apply\s*\(`)
+	nestConfigureRe     = regexp.MustCompile(`configure\s*\(\s*consumer`)
+
+	// NestJS validation pipe
+	nestValidationPipeRe = regexp.MustCompile(`ValidationPipe`)
+
+	// Drizzle ORM
+	drizzleRe = regexp.MustCompile(`(drizzle)\s*\(`)
 
 	// Fastify patterns
 	fastifyRouteRe    = regexp.MustCompile(`fastify\.(get|post|put|delete|patch|options)\s*\(\s*['"]([^'"]+)['"]`)
@@ -322,6 +354,64 @@ func IsNextAPIRoute(filePath string) (string, bool) {
 // MatchNextExportMethod returns an HTTP method name from "export function GET()" etc., or "".
 func MatchNextExportMethod(line string) string {
 	m := nextExportMethodRe.FindStringSubmatch(line)
+	if m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// MatchBrowserStorageAccess returns (storageType, method) for localStorage/sessionStorage usage, or ("","").
+// storageType is "localStorage" or "sessionStorage", method is "setItem", "getItem", or "removeItem".
+func MatchBrowserStorageAccess(line string) (string, string) {
+	m := localStorageSetRe.FindStringSubmatch(line)
+	if m != nil {
+		return m[1], m[2]
+	}
+	m = localStorageDirectRe.FindStringSubmatch(line)
+	if m != nil {
+		return m[1], "bracket_access"
+	}
+	return "", ""
+}
+
+// MatchNestEnableCors returns true if the line contains app.enableCors() or similar.
+func MatchNestEnableCors(line string) bool {
+	return nestEnableCorsRe.MatchString(line)
+}
+
+// MatchNestCorsPermissive returns true if the CORS config has origin: true or origin: '*'.
+func MatchNestCorsPermissive(line string) bool {
+	return nestCorsOriginRe.MatchString(line)
+}
+
+// MatchNestAppProvider returns true if the line references APP_INTERCEPTOR, APP_FILTER, etc.
+func MatchNestAppProvider(line string) bool {
+	return nestAppProviderRe.MatchString(line)
+}
+
+// MatchNestGlobalUse returns true if the line contains useGlobalInterceptors/Filters/etc.
+func MatchNestGlobalUse(line string) bool {
+	return nestGlobalUseRe.MatchString(line)
+}
+
+// MatchNestConsumerApply returns true if the line contains consumer.apply(...).
+func MatchNestConsumerApply(line string) bool {
+	return nestConsumerApplyRe.MatchString(line)
+}
+
+// MatchNestConfigure returns true if the line contains configure(consumer...).
+func MatchNestConfigure(line string) bool {
+	return nestConfigureRe.MatchString(line)
+}
+
+// MatchNestValidationPipe returns true if the line references ValidationPipe.
+func MatchNestValidationPipe(line string) bool {
+	return nestValidationPipeRe.MatchString(line)
+}
+
+// MatchDrizzle returns the operation from drizzle() call, or "".
+func MatchDrizzle(line string) string {
+	m := drizzleRe.FindStringSubmatch(line)
 	if m != nil {
 		return m[1]
 	}

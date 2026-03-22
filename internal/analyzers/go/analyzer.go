@@ -51,6 +51,7 @@ func (a *GoAnalyzer) Analyze(dir string, files []string) (*analyzers.AnalysisRes
 		if err != nil {
 			continue
 		}
+		ff.Quality = facts.QualityProof
 		result.Files = append(result.Files, ff)
 
 		// Parse file
@@ -72,6 +73,7 @@ func (a *GoAnalyzer) Analyze(dir string, files []string) (*analyzers.AnalysisRes
 			span := spanFromPos(fset, imp.Pos(), imp.End())
 			impFact, err := facts.NewImportFact(facts.LangGo, relPath, span, importPath, alias)
 			if err == nil {
+				impFact.Quality = facts.QualityProof
 				result.Imports = append(result.Imports, impFact)
 			}
 		}
@@ -96,6 +98,7 @@ func (a *GoAnalyzer) Analyze(dir string, files []string) (*analyzers.AnalysisRes
 
 			sf, err := facts.NewSymbolFact(facts.LangGo, relPath, span, name, kind, exported)
 			if err == nil {
+				sf.Quality = facts.QualityProof
 				result.Symbols = append(result.Symbols, sf)
 			}
 
@@ -105,6 +108,7 @@ func (a *GoAnalyzer) Analyze(dir string, files []string) (*analyzers.AnalysisRes
 				targetModule := filepath.Dir(relPath)
 				tf, err := facts.NewTestFact(facts.LangGo, relPath, span, name, targetModule, targetPath)
 				if err == nil {
+					tf.Quality = facts.QualityProof
 					result.Tests = append(result.Tests, tf)
 				}
 			}
@@ -114,6 +118,7 @@ func (a *GoAnalyzer) Analyze(dir string, files []string) (*analyzers.AnalysisRes
 				mSpan := spanFromPos(fset, funcDecl.Pos(), funcDecl.End())
 				mf, err := facts.NewMiddlewareFact(facts.LangGo, relPath, mSpan, name, "http")
 				if err == nil {
+					mf.Quality = facts.QualityProof
 					result.Middlewares = append(result.Middlewares, mf)
 				}
 			}
@@ -143,6 +148,7 @@ func (a *GoAnalyzer) Analyze(dir string, files []string) (*analyzers.AnalysisRes
 					span := spanFromPos(fset, typeSpec.Pos(), typeSpec.End())
 					sf, err := facts.NewSymbolFact(facts.LangGo, relPath, span, name, kind, exported)
 					if err == nil {
+						sf.Quality = facts.QualityProof
 						result.Symbols = append(result.Symbols, sf)
 					}
 				}
@@ -247,6 +253,7 @@ func extractUseMiddlewares(fset *token.FileSet, node *ast.File, relPath string) 
 			span := spanFromPos(fset, call.Pos(), call.End())
 			mf, err := facts.NewMiddlewareFact(facts.LangGo, relPath, span, name, "http")
 			if err == nil {
+				mf.Quality = facts.QualityProof
 				middlewares = append(middlewares, mf)
 			}
 		}
@@ -444,11 +451,12 @@ func extractRoutes(fset *token.FileSet, node *ast.File, relPath string) []facts.
 		if !ok {
 			return true
 		}
-		method, path, handler := matchRouteCall(call)
+		method, path, handler, middlewares := matchRouteCall(call)
 		if path != "" {
 			span := spanFromPos(fset, call.Pos(), call.End())
-			rf, err := facts.NewRouteFact(facts.LangGo, relPath, span, method, path, handler, nil)
+			rf, err := facts.NewRouteFact(facts.LangGo, relPath, span, method, path, handler, middlewares)
 			if err == nil {
+				rf.Quality = facts.QualityProof
 				routes = append(routes, rf)
 			}
 		}
@@ -457,10 +465,10 @@ func extractRoutes(fset *token.FileSet, node *ast.File, relPath string) []facts.
 	return routes
 }
 
-func matchRouteCall(call *ast.CallExpr) (method, path, handler string) {
+func matchRouteCall(call *ast.CallExpr) (method, path, handler string, middlewares []string) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
-		return "", "", ""
+		return "", "", "", nil
 	}
 	funcName := sel.Sel.Name
 
@@ -468,17 +476,29 @@ func matchRouteCall(call *ast.CallExpr) (method, path, handler string) {
 	case "HandleFunc", "Handle":
 		if len(call.Args) >= 2 {
 			path = extractStringLit(call.Args[0])
-			handler = extractIdent(call.Args[1])
-			return "ANY", path, handler
+			last := len(call.Args) - 1
+			handler = extractIdent(call.Args[last])
+			for i := 1; i < last; i++ {
+				if mw := extractIdent(call.Args[i]); mw != "" {
+					middlewares = append(middlewares, mw)
+				}
+			}
+			return "ANY", path, handler, middlewares
 		}
 	case "GET", "POST", "PUT", "DELETE", "PATCH", "Get", "Post", "Put", "Delete", "Patch":
 		if len(call.Args) >= 2 {
 			path = extractStringLit(call.Args[0])
-			handler = extractIdent(call.Args[1])
-			return strings.ToUpper(funcName), path, handler
+			last := len(call.Args) - 1
+			handler = extractIdent(call.Args[last])
+			for i := 1; i < last; i++ {
+				if mw := extractIdent(call.Args[i]); mw != "" {
+					middlewares = append(middlewares, mw)
+				}
+			}
+			return strings.ToUpper(funcName), path, handler, middlewares
 		}
 	}
-	return "", "", ""
+	return "", "", "", nil
 }
 
 func extractStringLit(expr ast.Expr) string {
@@ -497,6 +517,48 @@ func extractIdent(expr ast.Expr) string {
 		return sel.Sel.Name
 	}
 	return ""
+}
+
+// funcSpan represents the span of a function declaration in a file.
+type funcSpan struct {
+	name      string
+	kind      string // "function" or "method"
+	startLine int
+	endLine   int
+}
+
+// buildFuncSpans collects all function/method declarations and their line spans.
+func buildFuncSpans(fset *token.FileSet, node *ast.File) []funcSpan {
+	var spans []funcSpan
+	for _, decl := range node.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		kind := "function"
+		if funcDecl.Recv != nil {
+			kind = "method"
+		}
+		start := fset.Position(funcDecl.Pos()).Line
+		end := fset.Position(funcDecl.End()).Line
+		spans = append(spans, funcSpan{
+			name:      funcDecl.Name.Name,
+			kind:      kind,
+			startLine: start,
+			endLine:   end,
+		})
+	}
+	return spans
+}
+
+// findEnclosingFunc returns the funcSpan containing the given line, or nil.
+func findEnclosingFunc(spans []funcSpan, line int) *funcSpan {
+	for i := range spans {
+		if line >= spans[i].startLine && line <= spans[i].endLine {
+			return &spans[i]
+		}
+	}
+	return nil
 }
 
 // extractDataAccess detects database access calls.
@@ -535,6 +597,8 @@ func extractDataAccess(fset *token.FileSet, node *ast.File, relPath string, impo
 		}
 	}
 
+	funcSpans := buildFuncSpans(fset, node)
+
 	ast.Inspect(node, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -548,6 +612,12 @@ func extractDataAccess(fset *token.FileSet, node *ast.File, relPath string, impo
 			span := spanFromPos(fset, call.Pos(), call.End())
 			da, err := facts.NewDataAccessFact(facts.LangGo, relPath, span, sel.Sel.Name, backend)
 			if err == nil {
+				da.Quality = facts.QualityProof
+				da.ImportsDirect = true // backend was detected from imports
+				if fs := findEnclosingFunc(funcSpans, span.Start); fs != nil {
+					da.CallerName = fs.name
+					da.CallerKind = fs.kind
+				}
 				accesses = append(accesses, da)
 			}
 		}
@@ -601,6 +671,7 @@ func extractSecrets(fset *token.FileSet, node *ast.File, relPath string) []facts
 					span := spanFromPos(fset, valueSpec.Pos(), valueSpec.End())
 					sf, err := facts.NewSecretFact(facts.LangGo, relPath, span, "hardcoded_secret", name.Name)
 					if err == nil {
+						sf.Quality = facts.QualityProof
 						secrets = append(secrets, sf)
 					}
 				}

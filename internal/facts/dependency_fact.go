@@ -4,11 +4,12 @@ import "fmt"
 
 // DependencyFact represents a project dependency.
 type DependencyFact struct {
-	Language Language `json:"language"`
-	File     string   `json:"file"`
-	Span     Span     `json:"span"`
-	Name     string   `json:"name"`
-	Version  string   `json:"version,omitempty"`
+	Language Language    `json:"language"`
+	File     string      `json:"file"`
+	Span     Span        `json:"span"`
+	Name     string      `json:"name"`
+	Version  string      `json:"version,omitempty"`
+	Quality  FactQuality `json:"quality,omitempty"`
 }
 
 // NewDependencyFact creates a validated DependencyFact.

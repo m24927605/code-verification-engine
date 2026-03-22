@@ -1,0 +1,9 @@
+{
+  "rule_id": "SEC-SECRET-003",
+  "scenario": "false-positive-guard",
+  "expected_status": "pass",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": ".env.example file should not be flagged — only real .env files are violations"
+}

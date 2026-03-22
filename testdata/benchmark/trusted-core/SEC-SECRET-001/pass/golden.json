@@ -1,0 +1,9 @@
+{
+  "rule_id": "SEC-SECRET-001",
+  "scenario": "pass",
+  "expected_status": "pass",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "Clean repo with no hardcoded secrets — config loaded from env vars"
+}

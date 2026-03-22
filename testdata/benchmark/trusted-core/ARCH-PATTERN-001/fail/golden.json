@@ -1,0 +1,9 @@
+{
+  "rule_id": "ARCH-PATTERN-001",
+  "scenario": "fail",
+  "expected_status": "fail",
+  "expected_trust_class": "advisory",
+  "expected_has_evidence": true,
+  "expected_verification_level": "strong_inference",
+  "description": "Database operations in handler/ directory — outside the repository layer"
+}

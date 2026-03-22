@@ -4,12 +4,13 @@ import "fmt"
 
 // TestFact represents a detected test case.
 type TestFact struct {
-	Language     Language `json:"language"`
-	File         string   `json:"file"`
-	Span         Span     `json:"span"`
-	TestName     string   `json:"test_name"`
-	TargetModule string   `json:"target_module,omitempty"`
-	TargetPath   string   `json:"target_path,omitempty"`
+	Language     Language    `json:"language"`
+	File         string      `json:"file"`
+	Span         Span        `json:"span"`
+	TestName     string      `json:"test_name"`
+	TargetModule string      `json:"target_module,omitempty"`
+	TargetPath   string      `json:"target_path,omitempty"`
+	Quality      FactQuality `json:"quality,omitempty"`
 }
 
 // NewTestFact creates a validated TestFact.

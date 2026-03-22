@@ -4,11 +4,13 @@ import "fmt"
 
 // SecretFact represents a detected secret or credential.
 type SecretFact struct {
-	Language Language `json:"language"`
-	File     string   `json:"file"`
-	Span     Span     `json:"span"`
-	Kind     string   `json:"kind"`
-	Value    string   `json:"value,omitempty"`
+	Language Language    `json:"language"`
+	File     string      `json:"file"`
+	Span     Span        `json:"span"`
+	Kind     string      `json:"kind"`
+	Value    string      `json:"value,omitempty"`
+	Quality    FactQuality    `json:"quality,omitempty"`
+	Provenance FactProvenance `json:"provenance,omitempty"`
 }
 
 // NewSecretFact creates a validated SecretFact.

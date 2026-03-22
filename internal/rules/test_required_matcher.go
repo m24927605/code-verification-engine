@@ -79,7 +79,7 @@ func identifyModuleFiles(rule Rule, fs *FactSet) map[string]bool {
 func targetModuleKeywords(target string) []string {
 	switch target {
 	case "module.payment_service":
-		return []string{"payment"}
+		return []string{"payment", "billing", "invoice", "subscription", "entitlement"}
 	case "module.auth_service":
 		return []string{"auth"}
 	default:

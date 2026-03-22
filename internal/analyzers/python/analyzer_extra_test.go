@@ -1201,3 +1201,202 @@ func TestExtractPyTypeGraph_ParamDefaultNoType(t *testing.T) {
 		}
 	}
 }
+
+// --- False positive guard tests: structural parsing ---
+
+func TestPythonCommentedImportNotExtracted(t *testing.T) {
+	root, files := setupTempProject(t, map[string]string{
+		"app.py": `# from flask import Flask
+x = 1
+`,
+	})
+	a := New()
+	result, err := a.Analyze(root, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.ImportPath == "flask" {
+			t.Error("import inside comment should NOT be extracted")
+		}
+	}
+}
+
+func TestPythonCommentedRouteNotExtracted(t *testing.T) {
+	root, files := setupTempProject(t, map[string]string{
+		"app.py": `# @app.get("/secret")
+@app.get("/public")
+def public_handler():
+    pass
+`,
+	})
+	a := New()
+	result, err := a.Analyze(root, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range result.Routes {
+		if r.Path == "/secret" {
+			t.Error("route inside comment should NOT be extracted")
+		}
+	}
+	found := false
+	for _, r := range result.Routes {
+		if r.Path == "/public" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected route /public to be extracted")
+	}
+}
+
+func TestPythonCommentedSecretNotExtracted(t *testing.T) {
+	root, files := setupTempProject(t, map[string]string{
+		"config.py": `# SECRET_KEY = "supersecret1234567"
+x = 1
+`,
+	})
+	a := New()
+	result, err := a.Analyze(root, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Secrets) > 0 {
+		t.Error("secret inside comment should NOT be extracted")
+	}
+}
+
+func TestPythonTripleQuotedStringNotExtracted(t *testing.T) {
+	root, files := setupTempProject(t, map[string]string{
+		"app.py": `docstring = """
+from flask import Flask
+SECRET_KEY = "supersecret1234567"
+"""
+x = 1
+`,
+	})
+	a := New()
+	result, err := a.Analyze(root, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.ImportPath == "flask" {
+			t.Error("import inside triple-quoted string should NOT be extracted")
+		}
+	}
+	if len(result.Secrets) > 0 {
+		t.Error("secret inside triple-quoted string should NOT be extracted")
+	}
+}
+
+// --- Integration: real pipeline produces AST facts when python3 available ---
+
+func TestPythonAnalyzer_RealPipeline_ProducesASTFacts(t *testing.T) {
+	if !PythonASTAvailable() {
+		t.Skip("python3 not available")
+	}
+	root, files := setupTempProject(t, map[string]string{
+		"app.py": `from flask import Flask
+from fastapi import Depends
+
+app = Flask(__name__)
+
+@app.get("/users")
+def get_users():
+    return []
+
+@app.route("/health")
+def health():
+    return "ok"
+
+SECRET_KEY = "hardcoded-secret-value"
+
+def get_db():
+    pass
+
+def create_user(db=Depends(get_db)):
+    pass
+`,
+	})
+	a := New()
+	result, err := a.Analyze(root, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify imports have AST provenance
+	astImports := 0
+	for _, imp := range result.Imports {
+		if imp.Provenance == "ast_derived" {
+			astImports++
+		}
+	}
+	if astImports == 0 {
+		t.Error("expected at least one import with ProvenanceAST from real pipeline")
+	}
+
+	// Verify symbols have AST provenance
+	astSymbols := 0
+	for _, sym := range result.Symbols {
+		if sym.Provenance == "ast_derived" {
+			astSymbols++
+		}
+	}
+	if astSymbols == 0 {
+		t.Error("expected at least one symbol with ProvenanceAST from real pipeline")
+	}
+
+	// Verify routes have AST provenance
+	astRoutes := 0
+	for _, r := range result.Routes {
+		if r.Provenance == "ast_derived" {
+			astRoutes++
+		}
+	}
+	if astRoutes == 0 {
+		t.Error("expected at least one route with ProvenanceAST from real pipeline")
+	}
+
+	// Verify secrets have AST provenance
+	astSecrets := 0
+	for _, s := range result.Secrets {
+		if s.Provenance == "ast_derived" {
+			astSecrets++
+		}
+	}
+	if astSecrets == 0 {
+		t.Error("expected at least one secret with ProvenanceAST from real pipeline")
+	}
+}
+
+// --- False-positive regression: route decorator in docstring ---
+
+func TestPythonDocstringRouteDecoratorNotExtracted(t *testing.T) {
+	if !PythonASTAvailable() {
+		t.Skip("python3 not available")
+	}
+	root, files := setupTempProject(t, map[string]string{
+		"app.py": `"""
+Example usage:
+
+@app.get("/secret")
+def secret_handler():
+    pass
+"""
+
+x = 1
+`,
+	})
+	a := New()
+	result, err := a.Analyze(root, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range result.Routes {
+		if r.Path == "/secret" {
+			t.Error("route decorator in docstring should NOT be extracted")
+		}
+	}
+}

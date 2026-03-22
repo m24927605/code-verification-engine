@@ -1336,3 +1336,349 @@ func TestFindVisitorPattern_Negative_AcceptNoParams(t *testing.T) {
 		t.Error("expected no visitor evidence for accept with no params")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// findGoFEvidence — switch case dispatch coverage
+// ---------------------------------------------------------------------------
+
+func TestFindGoFEvidence_AllCreational(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Foo", Kind: "class", File: "foo.go", Language: "go",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	fs := &FactSet{TypeGraph: tg}
+
+	targets := []string{
+		"gof.singleton", "gof.factory_method", "gof.abstract_factory",
+		"gof.builder", "gof.prototype",
+	}
+	for _, target := range targets {
+		rule := Rule{ID: "T-GOF", Languages: []string{"go"}, Target: target}
+		// Just verify the dispatch works without panic
+		_ = findGoFEvidence(rule, fs)
+	}
+}
+
+func TestFindGoFEvidence_AllStructural(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Bar", Kind: "class", File: "bar.go", Language: "go",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	fs := &FactSet{TypeGraph: tg}
+
+	targets := []string{
+		"gof.adapter", "gof.bridge", "gof.composite", "gof.decorator",
+		"gof.facade", "gof.flyweight", "gof.proxy",
+	}
+	for _, target := range targets {
+		rule := Rule{ID: "T-GOF", Languages: []string{"go"}, Target: target}
+		_ = findGoFEvidence(rule, fs)
+	}
+}
+
+func TestFindGoFEvidence_AllBehavioral(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Baz", Kind: "class", File: "baz.go", Language: "go",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	fs := &FactSet{TypeGraph: tg}
+
+	targets := []string{
+		"gof.chain_of_responsibility", "gof.command", "gof.interpreter",
+		"gof.iterator", "gof.mediator", "gof.memento", "gof.observer",
+		"gof.state", "gof.strategy", "gof.template_method", "gof.visitor",
+	}
+	for _, target := range targets {
+		rule := Rule{ID: "T-GOF", Languages: []string{"go"}, Target: target}
+		_ = findGoFEvidence(rule, fs)
+	}
+}
+
+func TestFindGoFEvidence_UnknownTarget(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "X", Kind: "class", File: "x.go", Language: "go",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	fs := &FactSet{TypeGraph: tg}
+	rule := Rule{ID: "T-GOF", Languages: []string{"go"}, Target: "gof.unknown"}
+	ev := findGoFEvidence(rule, fs)
+	if ev != nil {
+		t.Errorf("expected nil for unknown GoF target, got %v", ev)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GoF pattern language filter branch coverage
+// ---------------------------------------------------------------------------
+
+func TestFindBridgePattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Renderer", Kind: "interface", File: "render.java", Language: "java",
+		Methods: []typegraph.MethodInfo{{Name: "render"}},
+		Span:    typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "RendererA", Kind: "class", File: "a.java", Language: "java",
+		Implements: []string{"Renderer"},
+		Span:       typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "RendererB", Kind: "class", File: "b.java", Language: "java",
+		Implements: []string{"Renderer"},
+		Span:       typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Shape", Kind: "class", File: "shape.java", Language: "java",
+		Fields: []typegraph.FieldInfo{{Name: "renderer", TypeName: "Renderer"}},
+		Span:   typegraph.Span{Start: 1, End: 10},
+	})
+	rule := Rule{ID: "T-BR", Languages: []string{"go"}, Target: "gof.bridge"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findBridgePattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in bridge")
+	}
+}
+
+func TestFindCompositePattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Component", Kind: "interface", File: "comp.java", Language: "java",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "CompositeNode", Kind: "class", File: "comp.java", Language: "java",
+		Implements: []string{"Component"},
+		Fields:     []typegraph.FieldInfo{{Name: "children", TypeName: "[]Component"}},
+		Span:       typegraph.Span{Start: 10, End: 20},
+	})
+	rule := Rule{ID: "T-COMP", Languages: []string{"go"}, Target: "gof.composite"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findCompositePattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in composite")
+	}
+}
+
+func TestFindDecoratorPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Logger", Kind: "interface", File: "log.java", Language: "java",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "LogDecorator", Kind: "class", File: "log.java", Language: "java",
+		Implements: []string{"Logger"},
+		Fields:     []typegraph.FieldInfo{{Name: "wrapped", TypeName: "Logger"}},
+		Span:       typegraph.Span{Start: 10, End: 20},
+	})
+	rule := Rule{ID: "T-DEC", Languages: []string{"go"}, Target: "gof.decorator"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findDecoratorPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in decorator")
+	}
+}
+
+func TestFindProxyPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Service", Kind: "interface", File: "svc.java", Language: "java",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "ServiceProxy", Kind: "class", File: "svc.java", Language: "java",
+		Implements: []string{"Service"},
+		Fields:     []typegraph.FieldInfo{{Name: "real", TypeName: "Service"}},
+		Span:       typegraph.Span{Start: 10, End: 20},
+	})
+	rule := Rule{ID: "T-PRX", Languages: []string{"go"}, Target: "gof.proxy"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findProxyPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in proxy")
+	}
+}
+
+func TestFindStrategyPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Algorithm", Kind: "interface", File: "algo.java", Language: "java",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Context", Kind: "class", File: "ctx.java", Language: "java",
+		Fields: []typegraph.FieldInfo{{Name: "strategy", TypeName: "Algorithm"}},
+		Span:   typegraph.Span{Start: 1, End: 10},
+	})
+	rule := Rule{ID: "T-STRAT", Languages: []string{"go"}, Target: "gof.strategy"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findStrategyPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in strategy")
+	}
+}
+
+func TestFindVisitorPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Visitor", Kind: "class", File: "v.java", Language: "java",
+		Methods: []typegraph.MethodInfo{
+			{Name: "visitA"}, {Name: "visitB"},
+		},
+		Span: typegraph.Span{Start: 1, End: 10},
+	})
+	rule := Rule{ID: "T-VIS", Languages: []string{"go"}, Target: "gof.visitor"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findVisitorPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in visitor")
+	}
+}
+
+func TestFindTemplateMethodPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "AbstractBase", Kind: "abstract_class", File: "base.java", Language: "java",
+		Methods: []typegraph.MethodInfo{
+			{Name: "step1", IsAbstract: true},
+			{Name: "execute", IsAbstract: false},
+		},
+		Span: typegraph.Span{Start: 1, End: 20},
+	})
+	rule := Rule{ID: "T-TMP", Languages: []string{"go"}, Target: "gof.template_method"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findTemplateMethodPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in template method")
+	}
+}
+
+func TestFindCommandPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Command", Kind: "interface", File: "cmd.java", Language: "java",
+		Methods: []typegraph.MethodInfo{{Name: "execute"}},
+		Span:    typegraph.Span{Start: 1, End: 5},
+	})
+	rule := Rule{ID: "T-CMD", Languages: []string{"go"}, Target: "gof.command"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findCommandPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in command")
+	}
+}
+
+func TestFindInterpreterPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Expr", Kind: "interface", File: "expr.java", Language: "java",
+		Methods: []typegraph.MethodInfo{{Name: "interpret"}},
+		Span:    typegraph.Span{Start: 1, End: 5},
+	})
+	rule := Rule{ID: "T-INT", Languages: []string{"go"}, Target: "gof.interpreter"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findInterpreterPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in interpreter")
+	}
+}
+
+func TestFindIteratorPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Iter", Kind: "interface", File: "iter.java", Language: "java",
+		Methods: []typegraph.MethodInfo{{Name: "next"}, {Name: "hasNext"}},
+		Span:    typegraph.Span{Start: 1, End: 5},
+	})
+	rule := Rule{ID: "T-ITER", Languages: []string{"go"}, Target: "gof.iterator"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findIteratorPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in iterator")
+	}
+}
+
+func TestFindMediatorPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Mediator", Kind: "interface", File: "m.java", Language: "java",
+		Methods: []typegraph.MethodInfo{{Name: "notify"}},
+		Span:    typegraph.Span{Start: 1, End: 5},
+	})
+	rule := Rule{ID: "T-MED", Languages: []string{"go"}, Target: "gof.mediator"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findMediatorPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in mediator")
+	}
+}
+
+func TestFindMementoPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Memento", Kind: "class", File: "m.java", Language: "java",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	rule := Rule{ID: "T-MEM", Languages: []string{"go"}, Target: "gof.memento"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findMementoPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in memento")
+	}
+}
+
+func TestFindObserverPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "EventBus", Kind: "class", File: "bus.java", Language: "java",
+		Methods: []typegraph.MethodInfo{{Name: "subscribe"}, {Name: "notify"}},
+		Span:    typegraph.Span{Start: 1, End: 10},
+	})
+	rule := Rule{ID: "T-OBS", Languages: []string{"go"}, Target: "gof.observer"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findObserverPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in observer")
+	}
+}
+
+func TestFindStatePattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "State", Kind: "interface", File: "s.java", Language: "java",
+		Span: typegraph.Span{Start: 1, End: 5},
+	})
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Machine", Kind: "class", File: "m.java", Language: "java",
+		Fields: []typegraph.FieldInfo{{Name: "state", TypeName: "State"}},
+		Methods: []typegraph.MethodInfo{{Name: "setState"}},
+		Span:    typegraph.Span{Start: 1, End: 10},
+	})
+	rule := Rule{ID: "T-STATE", Languages: []string{"go"}, Target: "gof.state"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findStatePattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in state")
+	}
+}
+
+func TestFindChainOfResponsibilityPattern_LanguageFilter(t *testing.T) {
+	tg := typegraph.New()
+	tg.AddNode(&typegraph.TypeNode{
+		Name: "Handler", Kind: "class", File: "h.java", Language: "java",
+		Fields: []typegraph.FieldInfo{{Name: "next", TypeName: "Handler"}},
+		Span:   typegraph.Span{Start: 1, End: 10},
+	})
+	rule := Rule{ID: "T-COR", Languages: []string{"go"}, Target: "gof.chain_of_responsibility"}
+	fs := &FactSet{TypeGraph: tg}
+	ev := findChainOfResponsibilityPattern(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected no evidence for language mismatch in chain of responsibility")
+	}
+}

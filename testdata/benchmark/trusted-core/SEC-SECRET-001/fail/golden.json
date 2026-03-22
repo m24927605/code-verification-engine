@@ -1,0 +1,9 @@
+{
+  "rule_id": "SEC-SECRET-001",
+  "scenario": "fail",
+  "expected_status": "fail",
+  "expected_trust_class": "machine_trusted",
+  "expected_has_evidence": true,
+  "expected_verification_level": "verified",
+  "description": "Repo contains hardcoded API key and password — must be detected"
+}

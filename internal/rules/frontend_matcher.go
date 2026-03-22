@@ -61,14 +61,47 @@ func findInnerHTMLUsage(rule Rule, fs *FactSet) []Evidence {
 	return evidence
 }
 
-// findTokenInLocalStorage looks for localStorage.setItem usage with token/jwt/auth keywords.
+// findTokenInLocalStorage detects auth token storage in localStorage/sessionStorage.
+// Detection strategies:
+//  1. Direct call expressions: localStorage.setItem(...) / sessionStorage.setItem(...)
+//     emitted by the analyzer as SymbolFacts with kind "call_expression"
+//  2. Token storage wrapper functions: functions in auth-related files whose names
+//     suggest token persistence (setToken, storeToken, saveToken, persistToken)
+//  3. Symbol name heuristic (legacy): symbols containing both "localstorage" and a token keyword
+//  4. Auth-file context: localStorage/sessionStorage calls in files whose path contains "auth"
 func findTokenInLocalStorage(rule Rule, fs *FactSet) []Evidence {
+	tokenKeywords := []string{"token", "jwt", "auth", "session", "credential", "access_token", "refresh_token"}
+
+	// Build set of files that contain localStorage/sessionStorage call expressions
+	storageCallFiles := make(map[string]bool)
 	var evidence []Evidence
+
 	for _, sym := range fs.Symbols {
 		if !languageMatch(string(sym.Language), rule.Languages) {
 			continue
 		}
 		lower := strings.ToLower(sym.Name)
+
+		// Strategy 1: Direct call expressions emitted by analyzer (e.g., "localStorage.setItem")
+		if sym.Kind == "call_expression" &&
+			(strings.HasPrefix(lower, "localstorage.") || strings.HasPrefix(lower, "sessionstorage.")) {
+			storageCallFiles[sym.File] = true
+			// Check if this call is in a file with auth/token context
+			fileLower := strings.ToLower(sym.File)
+			for _, kw := range tokenKeywords {
+				if strings.Contains(fileLower, kw) {
+					evidence = append(evidence, Evidence{
+						File:      sym.File,
+						LineStart: sym.Span.Start,
+						LineEnd:   sym.Span.End,
+						Symbol:    sym.Name,
+					})
+					break
+				}
+			}
+		}
+
+		// Strategy 3: Legacy symbol name heuristic
 		if strings.Contains(lower, "localstorage") &&
 			(strings.Contains(lower, "token") || strings.Contains(lower, "jwt") ||
 				strings.Contains(lower, "auth") || strings.Contains(lower, "session")) {
@@ -80,6 +113,65 @@ func findTokenInLocalStorage(rule Rule, fs *FactSet) []Evidence {
 			})
 		}
 	}
+
+	// Strategy 2: Token storage wrapper functions in files that have localStorage calls
+	for _, sym := range fs.Symbols {
+		if !languageMatch(string(sym.Language), rule.Languages) {
+			continue
+		}
+		if sym.Kind != "function" {
+			continue
+		}
+		if !storageCallFiles[sym.File] {
+			continue
+		}
+		lower := strings.ToLower(sym.Name)
+		// Functions that set/store/save/persist tokens
+		isStorageFunc := (strings.Contains(lower, "set") || strings.Contains(lower, "store") ||
+			strings.Contains(lower, "save") || strings.Contains(lower, "persist"))
+		hasTokenRef := false
+		for _, kw := range tokenKeywords {
+			if strings.Contains(lower, kw) {
+				hasTokenRef = true
+				break
+			}
+		}
+		if isStorageFunc && hasTokenRef {
+			evidence = append(evidence, Evidence{
+				File:      sym.File,
+				LineStart: sym.Span.Start,
+				LineEnd:   sym.Span.End,
+				Symbol:    sym.Name,
+			})
+		}
+	}
+
+	// Strategy 4: Check for constant definitions with token-like key names in files with localStorage calls
+	for _, sym := range fs.Symbols {
+		if !languageMatch(string(sym.Language), rule.Languages) {
+			continue
+		}
+		if !storageCallFiles[sym.File] {
+			continue
+		}
+		if sym.Kind != "variable" && sym.Kind != "const" {
+			continue
+		}
+		lower := strings.ToLower(sym.Name)
+		// Constants like TOKEN_KEY, AUTH_TOKEN, SESSION_KEY
+		for _, kw := range tokenKeywords {
+			if strings.Contains(lower, kw) && (strings.Contains(lower, "key") || strings.Contains(lower, "name") || strings.Contains(lower, "storage")) {
+				evidence = append(evidence, Evidence{
+					File:      sym.File,
+					LineStart: sym.Span.Start,
+					LineEnd:   sym.Span.End,
+					Symbol:    sym.Name,
+				})
+				break
+			}
+		}
+	}
+
 	return evidence
 }
 

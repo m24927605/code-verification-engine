@@ -4,9 +4,10 @@ import "fmt"
 
 // FileFact represents a source file in the scanned repository.
 type FileFact struct {
-	Language  Language `json:"language"`
-	File      string   `json:"file"`
-	LineCount int      `json:"line_count"`
+	Language  Language    `json:"language"`
+	File      string      `json:"file"`
+	LineCount int         `json:"line_count"`
+	Quality   FactQuality `json:"quality,omitempty"`
 }
 
 // NewFileFact creates a validated FileFact.

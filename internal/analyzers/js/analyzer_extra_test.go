@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/verabase/code-verification-engine/internal/analyzers/js"
+	"github.com/verabase/code-verification-engine/internal/facts"
 )
 
 // helper: write a JS file under dir with the given relative path and content.
@@ -439,6 +440,82 @@ func TestMatchTestDeclDescribeAndTest(t *testing.T) {
 	}
 }
 
+// --- DataAccessFact CallerName/CallerKind/ImportsDirect enrichment ---
+
+func TestDataAccessCallerEnrichment(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "db.js", `import { Sequelize } from 'sequelize';
+
+function getUsers(db) {
+  return db.findAll({ where: {} });
+}
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"db.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DataAccess) == 0 {
+		t.Fatal("expected at least 1 DataAccessFact")
+	}
+	fact := result.DataAccess[0]
+	if fact.CallerName != "getUsers" {
+		t.Errorf("expected CallerName=getUsers, got %q", fact.CallerName)
+	}
+	if fact.CallerKind != "function" {
+		t.Errorf("expected CallerKind=function, got %q", fact.CallerKind)
+	}
+	if !fact.ImportsDirect {
+		t.Error("expected ImportsDirect=true for file importing sequelize")
+	}
+}
+
+func TestDataAccessCallerEnrichmentOutsideFunction(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "toplevel.js", `import { Sequelize } from 'sequelize';
+
+const result = db.findAll({ where: {} });
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"toplevel.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DataAccess) == 0 {
+		t.Fatal("expected at least 1 DataAccessFact")
+	}
+	fact := result.DataAccess[0]
+	if fact.CallerName != "" {
+		t.Errorf("expected empty CallerName for top-level data access, got %q", fact.CallerName)
+	}
+	if fact.CallerKind != "" {
+		t.Errorf("expected empty CallerKind for top-level data access, got %q", fact.CallerKind)
+	}
+}
+
+func TestDataAccessImportsDirectFalseWithoutDBImport(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "nodbimport.js", `import express from 'express';
+
+function getUsers() {
+  return db.findAll({ where: {} });
+}
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"nodbimport.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.DataAccess) == 0 {
+		t.Fatal("expected at least 1 DataAccessFact")
+	}
+	for _, fact := range result.DataAccess {
+		if fact.ImportsDirect {
+			t.Errorf("expected ImportsDirect=false for file without DB import, got true for op=%q", fact.Operation)
+		}
+	}
+}
+
 // --- TypeGraph: class with extends, static fields, this.field, methods with params ---
 
 func TestTypeGraphClassWithExtends(t *testing.T) {
@@ -722,6 +799,144 @@ func TestAnalyzeMultipleFiles(t *testing.T) {
 
 // --- TypeGraph: class with only methods, no fields ---
 
+// --- False positive guard tests: structural parsing ---
+
+func TestCommentedImportNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `// import express from 'express';
+const x = 1;
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.ImportPath == "express" {
+			t.Error("import inside comment should NOT be extracted")
+		}
+	}
+}
+
+func TestCommentedRouteNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `// app.get('/api/secret', handler);
+app.get('/api/public', handler);
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range result.Routes {
+		if r.Path == "/api/secret" {
+			t.Error("route inside comment should NOT be extracted")
+		}
+	}
+	found := false
+	for _, r := range result.Routes {
+		if r.Path == "/api/public" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected route /api/public to be extracted")
+	}
+}
+
+func TestCommentedSecretNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "config.js", `// const JWT_SECRET = "mysecretkey123456";
+const x = 1;
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"config.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Secrets) > 0 {
+		t.Error("secret inside comment should NOT be extracted")
+	}
+}
+
+func TestCommentedMiddlewareNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `// app.use(helmet);
+app.use(cors);
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mw := range result.Middlewares {
+		if mw.Name == "helmet" {
+			t.Error("middleware inside comment should NOT be extracted")
+		}
+	}
+	found := false
+	for _, mw := range result.Middlewares {
+		if mw.Name == "cors" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected middleware cors to be extracted")
+	}
+}
+
+func TestMultiLineCommentedCodeNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `/*
+import express from 'express';
+app.get('/api/hidden', handler);
+const password = "admin123";
+*/
+const x = 1;
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.ImportPath == "express" {
+			t.Error("import inside multi-line comment should NOT be extracted")
+		}
+	}
+	for _, r := range result.Routes {
+		if r.Path == "/api/hidden" {
+			t.Error("route inside multi-line comment should NOT be extracted")
+		}
+	}
+	if len(result.Secrets) > 0 {
+		t.Error("secret inside multi-line comment should NOT be extracted")
+	}
+}
+
+func TestProvenanceMarkedOnFacts(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `import express from 'express';
+app.get('/users', handler);
+app.use(cors);
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.Provenance == "" {
+			t.Errorf("import fact should have provenance set, got empty for %s", imp.ImportPath)
+		}
+	}
+	for _, r := range result.Routes {
+		if r.Provenance == "" {
+			t.Errorf("route fact should have provenance set, got empty for %s %s", r.Method, r.Path)
+		}
+	}
+}
+
 func TestTypeGraphClassMethodsOnly(t *testing.T) {
 	dir := t.TempDir()
 	writeJS(t, dir, "service.js", `
@@ -755,6 +970,175 @@ class Calculator {
 			if len(m.Params) != 2 {
 				t.Errorf("expected add to have 2 params, got %d", len(m.Params))
 			}
+		}
+	}
+}
+
+// --- AST provenance tests ---
+
+func TestJSAnalyzer_ASTProvenanceOnImports(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `import express from 'express';
+const path = require('path');
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Imports) < 2 {
+		t.Fatalf("expected at least 2 imports, got %d", len(result.Imports))
+	}
+	// At least one import should have AST provenance
+	foundAST := false
+	for _, imp := range result.Imports {
+		if imp.Provenance == facts.ProvenanceAST {
+			foundAST = true
+		}
+	}
+	if !foundAST {
+		t.Error("expected at least one import with ProvenanceAST")
+	}
+}
+
+func TestJSAnalyzer_ASTProvenanceOnRoutes(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "routes.js", `app.get('/users', handler);
+app.post('/items', createItem);
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"routes.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Routes) < 2 {
+		t.Fatalf("expected at least 2 routes, got %d", len(result.Routes))
+	}
+	foundAST := false
+	for _, r := range result.Routes {
+		if r.Provenance == facts.ProvenanceAST {
+			foundAST = true
+		}
+	}
+	if !foundAST {
+		t.Error("expected at least one route with ProvenanceAST")
+	}
+}
+
+// --- Integration: real pipeline produces AST facts ---
+
+func TestJSAnalyzer_RealPipeline_ProducesASTFacts(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "server.js", `import express from 'express';
+const app = express();
+app.use(cors);
+app.get('/api/users', getUsers);
+app.post('/api/items', createItem);
+
+const JWT_SECRET = "super-secret-key-value";
+
+function getUsers(req, res) {
+  res.json([]);
+}
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"server.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify imports have AST provenance
+	astImports := 0
+	for _, imp := range result.Imports {
+		if imp.Provenance == facts.ProvenanceAST {
+			astImports++
+		}
+	}
+	if astImports == 0 {
+		t.Error("expected at least one import with ProvenanceAST from real pipeline")
+	}
+
+	// Verify symbols have AST provenance
+	astSymbols := 0
+	for _, sym := range result.Symbols {
+		if sym.Provenance == facts.ProvenanceAST {
+			astSymbols++
+		}
+	}
+	if astSymbols == 0 {
+		t.Error("expected at least one symbol with ProvenanceAST from real pipeline")
+	}
+
+	// Verify routes have AST provenance
+	astRoutes := 0
+	for _, r := range result.Routes {
+		if r.Provenance == facts.ProvenanceAST {
+			astRoutes++
+		}
+	}
+	if astRoutes < 2 {
+		t.Errorf("expected at least 2 routes with ProvenanceAST, got %d", astRoutes)
+	}
+
+	// Verify middleware has AST provenance
+	astMw := 0
+	for _, mw := range result.Middlewares {
+		if mw.Provenance == facts.ProvenanceAST {
+			astMw++
+		}
+	}
+	if astMw == 0 {
+		t.Error("expected at least one middleware with ProvenanceAST from real pipeline")
+	}
+
+	// Verify secrets have AST provenance
+	astSecrets := 0
+	for _, s := range result.Secrets {
+		if s.Provenance == facts.ProvenanceAST {
+			astSecrets++
+		}
+	}
+	if astSecrets == 0 {
+		t.Error("expected at least one secret with ProvenanceAST from real pipeline")
+	}
+}
+
+// --- False-positive regression: strings containing code patterns ---
+
+func TestStringContainingRouteNoASTExtraction(t *testing.T) {
+	// The AST parser correctly skips route patterns inside string literals.
+	// The regex fallback may still extract them (known limitation of StripCommentsOnly
+	// which preserves strings). This test verifies the AST path does not extract it.
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `const msg = "app.get('/secret', handler)";
+const x = 1;
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// If a route was extracted, it should NOT have AST provenance
+	for _, r := range result.Routes {
+		if r.Path == "/secret" && r.Provenance == facts.ProvenanceAST {
+			t.Error("AST parser should NOT extract route pattern from inside string literal")
+		}
+	}
+}
+
+func TestBlockCommentedImportNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "app.js", `/* import express from 'express'; */
+const y = 2;
+`)
+	a := js.New()
+	result, err := a.Analyze(dir, []string{"app.js"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.ImportPath == "express" {
+			t.Error("import inside block comment should NOT be extracted")
 		}
 	}
 }

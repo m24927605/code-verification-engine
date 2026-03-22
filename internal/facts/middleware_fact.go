@@ -4,11 +4,13 @@ import "fmt"
 
 // MiddlewareFact represents a middleware definition.
 type MiddlewareFact struct {
-	Language Language `json:"language"`
-	File     string   `json:"file"`
-	Span     Span     `json:"span"`
-	Name     string   `json:"name"`
-	Kind     string   `json:"kind"`
+	Language Language    `json:"language"`
+	File     string      `json:"file"`
+	Span     Span        `json:"span"`
+	Name     string      `json:"name"`
+	Kind     string      `json:"kind"`
+	Quality    FactQuality    `json:"quality,omitempty"`
+	Provenance FactProvenance `json:"provenance,omitempty"`
 }
 
 // NewMiddlewareFact creates a validated MiddlewareFact.

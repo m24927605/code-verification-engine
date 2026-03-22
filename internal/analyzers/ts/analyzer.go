@@ -74,6 +74,7 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		}
 		for _, m := range nextMethods {
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: 1, End: 1}, m, routePath, "", nil); err == nil {
+				fact.Quality = facts.QualityHeuristic
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -86,15 +87,38 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 	isTest := isTestFile(relPath)
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
+	inBlockComment := false
 
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
+		// Multi-line comment tracking
+		if inBlockComment {
+			if idx := strings.Index(trimmed, "*/"); idx >= 0 {
+				inBlockComment = false
+				// Rest of line after */ could have code, but for simplicity skip entire line
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "/*") {
+			if !strings.Contains(trimmed, "*/") {
+				inBlockComment = true
+			}
+			continue
+		}
+
+		// Skip single-line comments
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+
 		// ES imports
 		if imp := common.MatchESImport(trimmed); imp != "" {
 			if fact, err := facts.NewImportFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, imp, ""); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Imports = append(result.Imports, fact)
 			}
 		}
@@ -103,13 +127,21 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		if name, kind := common.MatchSymbolDecl(trimmed); name != "" {
 			exported := common.IsExported(trimmed)
 			if fact, err := facts.NewSymbolFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, name, kind, exported); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Symbols = append(result.Symbols, fact)
 			}
 		}
 
 		// Express routes
 		if method, path := common.MatchExpressRoute(trimmed); method != "" {
+			prov := facts.ProvenanceAST
+			if looksLikeStringLiteral(trimmed) {
+				prov = facts.ProvenanceHeuristic
+			}
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = prov
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -117,6 +149,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// NestJS controller prefix
 		if prefix := common.ExtractNestController(trimmed); prefix != "" {
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, "PREFIX", "/"+strings.TrimPrefix(prefix, "/"), "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -124,6 +158,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// NestJS route decorators
 		if method, path, ok := common.ExtractNestRoute(trimmed); ok {
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -131,6 +167,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// NestJS guards
 		if guard := common.ExtractNestGuard(trimmed); guard != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, guard, "nestjs-guard"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -138,6 +176,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// NestJS interceptors
 		if ic := common.ExtractNestInterceptor(trimmed); ic != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, ic, "nestjs-interceptor"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -146,6 +186,7 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		if entity := common.ExtractNestInjectRepo(trimmed); entity != "" {
 			op := "@InjectRepository(" + entity + ")"
 			if fact, err := facts.NewDataAccessFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, op, "typeorm"); err == nil {
+				fact.Quality = facts.QualityStructural
 				result.DataAccess = append(result.DataAccess, fact)
 			}
 		}
@@ -153,6 +194,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify routes
 		if method, path, ok := common.ExtractFastifyRoute(trimmed); ok {
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -160,6 +203,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify route objects
 		if url := common.ExtractFastifyRouteObj(trimmed); url != "" {
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, "ANY", url, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -167,6 +212,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify register (plugin as middleware)
 		if plugin := common.ExtractFastifyRegister(trimmed); plugin != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, plugin, "fastify-plugin"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -174,6 +221,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Fastify hooks
 		if hook := common.ExtractFastifyHook(trimmed); hook != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, hook, "fastify-hook"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -181,6 +230,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Koa routes
 		if method, path, ok := common.ExtractKoaRoute(trimmed); ok {
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -188,6 +239,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Hapi routes
 		if method, path, ok := common.ExtractHapiRoute(trimmed); ok {
 			if fact, err := facts.NewRouteFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, method, path, "", nil); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Routes = append(result.Routes, fact)
 			}
 		}
@@ -195,6 +248,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Hapi extensions
 		if ext := common.ExtractHapiExt(trimmed); ext != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, ext, "hapi-ext"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -202,6 +257,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Hapi register
 		if plugin := common.ExtractHapiRegister(trimmed); plugin != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, plugin, "hapi-plugin"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -209,6 +266,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Express middleware (also catches Koa app.use)
 		if mw := common.MatchExpressMiddleware(trimmed); mw != "" {
 			if fact, err := facts.NewMiddlewareFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, mw, "express"); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Middlewares = append(result.Middlewares, fact)
 			}
 		}
@@ -216,6 +275,7 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Data access
 		if op, backend := common.MatchDataAccess(trimmed); op != "" {
 			if fact, err := facts.NewDataAccessFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, op, backend); err == nil {
+				fact.Quality = facts.QualityStructural
 				result.DataAccess = append(result.DataAccess, fact)
 			}
 		}
@@ -223,6 +283,8 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		// Secrets
 		if kind := common.MatchSecret(trimmed); kind != "" {
 			if fact, err := facts.NewSecretFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, kind, ""); err == nil {
+				fact.Quality = facts.QualityStructural
+				fact.Provenance = facts.ProvenanceAST
 				result.Secrets = append(result.Secrets, fact)
 			}
 		}
@@ -231,6 +293,7 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 		if isTest {
 			if testName := matchTestDecl(trimmed); testName != "" {
 				if fact, err := facts.NewTestFact(facts.LangTypeScript, relPath, facts.Span{Start: lineNum, End: lineNum}, testName, "", ""); err == nil {
+					fact.Quality = facts.QualityStructural
 					result.Tests = append(result.Tests, fact)
 				}
 			}
@@ -248,6 +311,7 @@ func (a *TypeScriptAnalyzer) analyzeFile(absPath, relPath string, result *analyz
 
 	// File fact — only added if scan completed fully
 	if fact, err := facts.NewFileFact(facts.LangTypeScript, relPath, lineNum); err == nil {
+		fact.Quality = facts.QualityStructural
 		result.Files = append(result.Files, fact)
 	}
 
@@ -438,6 +502,26 @@ func parseTSParams(paramStr string) []typegraph.ParamInfo {
 		params = append(params, typegraph.ParamInfo{Name: name, TypeName: typeName})
 	}
 	return params
+}
+
+// looksLikeStringLiteral returns true if the trimmed line appears to contain
+// the relevant code pattern inside a string literal (e.g., const x = "app.get(...)").
+func looksLikeStringLiteral(trimmed string) bool {
+	// Simple heuristic: if the line starts with a variable declaration
+	// and the pattern appears after a quote, it's likely inside a string.
+	for _, prefix := range []string{`= "`, `= '`, "= `"} {
+		idx := strings.Index(trimmed, prefix)
+		if idx >= 0 {
+			// Check if an express-like pattern appears after the string start
+			afterQuote := trimmed[idx+len(prefix):]
+			if strings.Contains(afterQuote, ".get(") || strings.Contains(afterQuote, ".post(") ||
+				strings.Contains(afterQuote, ".put(") || strings.Contains(afterQuote, ".delete(") ||
+				strings.Contains(afterQuote, ".patch(") || strings.Contains(afterQuote, ".use(") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isTestFile(path string) bool {

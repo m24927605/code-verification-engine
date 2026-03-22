@@ -88,6 +88,7 @@ func TestRelationshipMatcherWithLanguageFilter(t *testing.T) {
 		ID: "AUTH-002", Type: "relationship", Target: "route.protected_uses_auth_middleware",
 		Languages: []string{"go"}, Message: "Protected routes use auth middleware.",
 	}
+	// TS route is filtered (Go-only rule); Go route has auth binding + JWT import → AuthStrong → pass
 	fs := &FactSet{
 		Routes: []facts.RouteFact{
 			route("GET", "/api/users", "GetUsers", "routes.ts", facts.LangTypeScript, nil),
@@ -95,6 +96,9 @@ func TestRelationshipMatcherWithLanguageFilter(t *testing.T) {
 		},
 		Middlewares: []facts.MiddlewareFact{
 			mw("AuthMiddleware", "auth", "middleware.go", facts.LangGo),
+		},
+		Imports: []facts.ImportFact{
+			imp("github.com/golang-jwt/jwt", "", "routes.go", facts.LangGo),
 		},
 	}
 	finding := matchRelationship(rule, fs, []string{"go"})
@@ -432,6 +436,65 @@ func TestRelationshipMiddlewareFilterLanguage(t *testing.T) {
 	// No binding data → unknown
 	if finding.Status != StatusUnknown {
 		t.Errorf("status = %v, want unknown (no binding data)", finding.Status)
+	}
+}
+
+func TestIsPublicRoute(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/health", true},
+		{"/Health", true},
+		{"/ping", true},
+		{"/public/page", true},
+		{"/login", true},
+		{"/register", true},
+		{"/signup", true},
+		{"/auth/callback", true},
+		{"/api/users", false},
+		{"/admin/panel", false},
+		{"/dashboard", false},
+	}
+	for _, tc := range tests {
+		got := isPublicRoute(tc.path)
+		if got != tc.want {
+			t.Errorf("isPublicRoute(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestHasMinimalFacts_FileFactRequired(t *testing.T) {
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("main", "function", "main.go", facts.LangGo, false, 1, 5),
+		},
+	}
+	if hasMinimalFacts(fs, []string{"SymbolFact", "FileFact"}) {
+		t.Error("expected false when FileFact required but missing")
+	}
+}
+
+func TestHasMinimalFacts_RouteFactRequired(t *testing.T) {
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("main", "function", "main.go", facts.LangGo, false, 1, 5),
+		},
+	}
+	if hasMinimalFacts(fs, []string{"RouteFact"}) {
+		t.Error("expected false when RouteFact required but missing")
+	}
+}
+
+func TestHasMinimalFacts_UnknownFactType(t *testing.T) {
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("main", "function", "main.go", facts.LangGo, false, 1, 5),
+		},
+	}
+	// Unknown fact types are ignored (no case for them), so result should be true
+	if !hasMinimalFacts(fs, []string{"SomethingElse"}) {
+		t.Error("expected true for unknown fact type (no check)")
 	}
 }
 

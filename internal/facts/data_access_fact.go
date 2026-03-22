@@ -4,11 +4,15 @@ import "fmt"
 
 // DataAccessFact represents a database or data store access pattern.
 type DataAccessFact struct {
-	Language  Language `json:"language"`
-	File      string   `json:"file"`
-	Span      Span     `json:"span"`
-	Operation string   `json:"operation"`
-	Backend   string   `json:"backend,omitempty"`
+	Language  Language    `json:"language"`
+	File      string      `json:"file"`
+	Span      Span        `json:"span"`
+	Operation string      `json:"operation"`
+	Backend   string      `json:"backend,omitempty"`
+	Quality       FactQuality `json:"quality,omitempty"`
+	CallerName    string      `json:"caller_name,omitempty"`
+	CallerKind    string      `json:"caller_kind,omitempty"` // "function", "method", "handler"
+	ImportsDirect bool        `json:"imports_direct,omitempty"`
 }
 
 // NewDataAccessFact creates a validated DataAccessFact.

@@ -4,11 +4,12 @@ import "fmt"
 
 // ConfigFact represents a configuration value reference.
 type ConfigFact struct {
-	Language Language `json:"language"`
-	File     string   `json:"file"`
-	Span     Span     `json:"span"`
-	Key      string   `json:"key"`
-	Source   string   `json:"source,omitempty"`
+	Language Language    `json:"language"`
+	File     string      `json:"file"`
+	Span     Span        `json:"span"`
+	Key      string      `json:"key"`
+	Source   string      `json:"source,omitempty"`
+	Quality  FactQuality `json:"quality,omitempty"`
 }
 
 // NewConfigFact creates a validated ConfigFact.

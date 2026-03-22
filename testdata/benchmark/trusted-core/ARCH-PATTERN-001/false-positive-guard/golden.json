@@ -1,0 +1,9 @@
+{
+  "rule_id": "ARCH-PATTERN-001",
+  "scenario": "false-positive-guard",
+  "expected_status": "pass",
+  "expected_trust_class": "advisory",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "File in handler/ directory with NO data access should not be flagged — only actual DB operations outside repo layer are violations"
+}

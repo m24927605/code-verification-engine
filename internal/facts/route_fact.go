@@ -4,13 +4,15 @@ import "fmt"
 
 // RouteFact represents an HTTP route definition.
 type RouteFact struct {
-	Language    Language `json:"language"`
-	File        string   `json:"file"`
-	Span        Span     `json:"span"`
-	Method      string   `json:"method"`
-	Path        string   `json:"path"`
-	Handler     string   `json:"handler"`
-	Middlewares []string `json:"middlewares,omitempty"`
+	Language    Language    `json:"language"`
+	File        string      `json:"file"`
+	Span        Span        `json:"span"`
+	Method      string      `json:"method"`
+	Path        string      `json:"path"`
+	Handler     string      `json:"handler"`
+	Middlewares []string    `json:"middlewares,omitempty"`
+	Quality     FactQuality    `json:"quality,omitempty"`
+	Provenance  FactProvenance `json:"provenance,omitempty"`
 }
 
 // NewRouteFact creates a validated RouteFact.

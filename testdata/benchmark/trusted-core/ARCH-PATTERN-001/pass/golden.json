@@ -1,0 +1,9 @@
+{
+  "rule_id": "ARCH-PATTERN-001",
+  "scenario": "pass",
+  "expected_status": "pass",
+  "expected_trust_class": "advisory",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "All database access is encapsulated in the repo/ directory"
+}

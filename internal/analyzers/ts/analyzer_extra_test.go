@@ -914,3 +914,295 @@ export function MyComponent() {
 		t.Error("expected exported symbol MyComponent")
 	}
 }
+
+// --- False positive guard tests: structural parsing ---
+
+func writeTS(t *testing.T, dir, rel, content string) {
+	t.Helper()
+	abs := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTSCommentedImportNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "app.ts", `// import express from 'express';
+const x = 1;
+`)
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"app.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.ImportPath == "express" {
+			t.Error("import inside comment should NOT be extracted")
+		}
+	}
+}
+
+func TestTSCommentedRouteNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "app.ts", `// app.get('/api/secret', handler);
+app.get('/api/public', handler);
+`)
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"app.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range result.Routes {
+		if r.Path == "/api/secret" {
+			t.Error("route inside comment should NOT be extracted")
+		}
+	}
+	found := false
+	for _, r := range result.Routes {
+		if r.Path == "/api/public" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected route /api/public to be extracted")
+	}
+}
+
+func TestTSCommentedSecretNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "config.ts", `// const JWT_SECRET = "mysecretkey123456";
+const x = 1;
+`)
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"config.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Secrets) > 0 {
+		t.Error("secret inside comment should NOT be extracted")
+	}
+}
+
+func TestTSMultiLineCommentNotExtracted(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "app.ts", `/*
+import express from 'express';
+app.get('/api/hidden', handler);
+const password = "admin123";
+*/
+const x = 1;
+`)
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"app.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.ImportPath == "express" {
+			t.Error("import inside multi-line comment should NOT be extracted")
+		}
+	}
+	for _, r := range result.Routes {
+		if r.Path == "/api/hidden" {
+			t.Error("route inside multi-line comment should NOT be extracted")
+		}
+	}
+	if len(result.Secrets) > 0 {
+		t.Error("secret inside multi-line comment should NOT be extracted")
+	}
+}
+
+func TestTSProvenanceMarkedOnFacts(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "app.ts", `import express from 'express';
+app.get('/users', handler);
+app.use(cors);
+`)
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"app.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, imp := range result.Imports {
+		if imp.Provenance == "" {
+			t.Errorf("import fact should have provenance set, got empty for %s", imp.ImportPath)
+		}
+	}
+	for _, r := range result.Routes {
+		if r.Provenance == "" {
+			t.Errorf("route fact should have provenance set, got empty for %s %s", r.Method, r.Path)
+		}
+	}
+}
+
+// --- AST provenance tests ---
+
+func TestTSAnalyzer_ASTProvenanceOnImports(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "app.ts", `import express from 'express';
+import { Router } from 'express';
+`)
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"app.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Imports) < 2 {
+		t.Fatalf("expected at least 2 imports, got %d", len(result.Imports))
+	}
+	foundAST := false
+	for _, imp := range result.Imports {
+		if imp.Provenance == facts.ProvenanceAST {
+			foundAST = true
+		}
+	}
+	if !foundAST {
+		t.Error("expected at least one import with ProvenanceAST")
+	}
+}
+
+func TestTSAnalyzer_DecoratorRoutes(t *testing.T) {
+	dir := t.TempDir()
+	writeTS(t, dir, "users.controller.ts", `import { Controller, Get, Post } from '@nestjs/common';
+
+@Controller('users')
+export class UsersController {
+  @Get('/list')
+  list() {}
+
+  @Post('/create')
+  create() {}
+}
+`)
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"users.controller.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	routeMap := map[string]bool{}
+	for _, r := range result.Routes {
+		routeMap[r.Method+" "+r.Path] = true
+	}
+	if !routeMap["PREFIX /users"] {
+		t.Error("expected PREFIX /users")
+	}
+	if !routeMap["GET /list"] {
+		t.Errorf("expected GET /list, got routes: %v", routeMap)
+	}
+	if !routeMap["POST /create"] {
+		t.Errorf("expected POST /create, got routes: %v", routeMap)
+	}
+
+	// Check that at least one route has AST provenance
+	foundAST := false
+	for _, r := range result.Routes {
+		if r.Provenance == facts.ProvenanceAST {
+			foundAST = true
+		}
+	}
+	if !foundAST {
+		t.Error("expected at least one route with ProvenanceAST")
+	}
+}
+
+// --- Integration: real pipeline produces AST facts ---
+
+func TestTSAnalyzer_RealPipeline_ProducesASTFacts(t *testing.T) {
+	dir := t.TempDir()
+	abs := filepath.Join(dir, "server.ts")
+	if err := os.WriteFile(abs, []byte(`import express from 'express';
+const app = express();
+app.use(cors);
+app.get('/api/users', getUsers);
+app.post('/api/items', createItem);
+
+const JWT_SECRET: string = "super-secret-key-value";
+
+function getUsers(req: Request, res: Response): void {
+  res.json([]);
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"server.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify imports have AST provenance
+	astImports := 0
+	for _, imp := range result.Imports {
+		if imp.Provenance == facts.ProvenanceAST {
+			astImports++
+		}
+	}
+	if astImports == 0 {
+		t.Error("expected at least one import with ProvenanceAST")
+	}
+
+	// Verify symbols have AST provenance
+	astSymbols := 0
+	for _, sym := range result.Symbols {
+		if sym.Provenance == facts.ProvenanceAST {
+			astSymbols++
+		}
+	}
+	if astSymbols == 0 {
+		t.Error("expected at least one symbol with ProvenanceAST")
+	}
+
+	// Verify routes have AST provenance
+	astRoutes := 0
+	for _, r := range result.Routes {
+		if r.Provenance == facts.ProvenanceAST {
+			astRoutes++
+		}
+	}
+	if astRoutes < 2 {
+		t.Errorf("expected at least 2 routes with ProvenanceAST, got %d", astRoutes)
+	}
+
+	// Verify middleware has AST provenance
+	astMw := 0
+	for _, mw := range result.Middlewares {
+		if mw.Provenance == facts.ProvenanceAST {
+			astMw++
+		}
+	}
+	if astMw == 0 {
+		t.Error("expected at least one middleware with ProvenanceAST")
+	}
+}
+
+// --- False-positive regression: strings and comments ---
+
+func TestTSStringContainingRouteNoASTExtraction(t *testing.T) {
+	// The AST parser correctly skips route patterns inside string literals.
+	// The regex fallback may still extract them (known limitation).
+	// This test verifies the AST path does not produce a route with AST provenance.
+	dir := t.TempDir()
+	abs := filepath.Join(dir, "app.ts")
+	if err := os.WriteFile(abs, []byte(`const msg: string = "app.get('/secret', handler)";
+const x = 1;
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := ts.New()
+	result, err := a.Analyze(dir, []string{"app.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range result.Routes {
+		if r.Path == "/secret" && r.Provenance == facts.ProvenanceAST {
+			t.Error("AST parser should NOT extract route pattern from inside string literal")
+		}
+	}
+}
+
+

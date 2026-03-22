@@ -24,6 +24,7 @@ func TestFindInputValidation_ByImport(t *testing.T) {
 }
 
 func TestFindInputValidation_ByImport_Joi(t *testing.T) {
+	// joi in a non-route file is weak evidence — should NOT pass
 	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
 	fs := &FactSet{
 		Imports: []facts.ImportFact{
@@ -31,21 +32,50 @@ func TestFindInputValidation_ByImport_Joi(t *testing.T) {
 		},
 	}
 	ev := findInputValidation(rule, fs)
-	if len(ev) == 0 {
-		t.Error("expected evidence for joi import")
+	if len(ev) != 0 {
+		t.Error("expected NO evidence for joi import in non-route file (config-only)")
 	}
 }
 
-func TestFindInputValidation_ByImport_Zod(t *testing.T) {
-	rule := Rule{ID: "T-001", Languages: []string{"typescript"}}
+func TestFindInputValidation_ByImport_Joi_InController(t *testing.T) {
+	// joi in a controller file IS strong evidence
+	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
 	fs := &FactSet{
 		Imports: []facts.ImportFact{
-			imp("zod", "", "schema.ts", facts.LangTypeScript),
+			imp("joi", "", "user.controller.js", facts.LangJavaScript),
 		},
 	}
 	ev := findInputValidation(rule, fs)
 	if len(ev) == 0 {
-		t.Error("expected evidence for zod import")
+		t.Error("expected evidence for joi import in controller file")
+	}
+}
+
+func TestFindInputValidation_ByImport_Zod(t *testing.T) {
+	// zod in a non-route file is weak evidence — should NOT pass
+	rule := Rule{ID: "T-001", Languages: []string{"typescript"}}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("zod", "", "config.ts", facts.LangTypeScript),
+		},
+	}
+	ev := findInputValidation(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected NO evidence for zod import in config file")
+	}
+}
+
+func TestFindInputValidation_ByImport_Zod_InDTO(t *testing.T) {
+	// zod in a DTO file IS strong evidence
+	rule := Rule{ID: "T-001", Languages: []string{"typescript"}}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("zod", "", "create-user.dto.ts", facts.LangTypeScript),
+		},
+	}
+	ev := findInputValidation(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for zod import in DTO file")
 	}
 }
 
@@ -89,6 +119,7 @@ func TestFindInputValidation_BySymbol_Sanitize(t *testing.T) {
 }
 
 func TestFindInputValidation_BySymbol_Schema(t *testing.T) {
+	// Schema symbol in a non-route file is NOT strong evidence for route-level validation
 	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
 	fs := &FactSet{
 		Symbols: []facts.SymbolFact{
@@ -96,8 +127,22 @@ func TestFindInputValidation_BySymbol_Schema(t *testing.T) {
 		},
 	}
 	ev := findInputValidation(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected NO evidence for schema symbol in non-route file")
+	}
+}
+
+func TestFindInputValidation_BySymbol_Schema_InController(t *testing.T) {
+	// Schema symbol in a controller file IS strong evidence
+	rule := Rule{ID: "T-001", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("validateRequest", "function", "user.controller.js", facts.LangJavaScript, false, 1, 5),
+		},
+	}
+	ev := findInputValidation(rule, fs)
 	if len(ev) == 0 {
-		t.Error("expected evidence for schema symbol")
+		t.Error("expected evidence for validate symbol in controller file")
 	}
 }
 
@@ -559,6 +604,7 @@ func TestFindGlobalErrorHandler_ByMiddleware_Catch(t *testing.T) {
 }
 
 func TestFindGlobalErrorHandler_BySymbol_ErrorHandler(t *testing.T) {
+	// Class-only definitions without binding evidence should NOT pass
 	rule := Rule{ID: "T-006", Languages: []string{"go"}}
 	fs := &FactSet{
 		Symbols: []facts.SymbolFact{
@@ -566,12 +612,29 @@ func TestFindGlobalErrorHandler_BySymbol_ErrorHandler(t *testing.T) {
 		},
 	}
 	ev := findGlobalErrorHandler(rule, fs)
+	if len(ev) != 0 {
+		t.Error("expected NO evidence for error+handler symbol without binding evidence")
+	}
+}
+
+func TestFindGlobalErrorHandler_BySymbol_WithBinding(t *testing.T) {
+	// Class definition WITH binding evidence should pass
+	rule := Rule{ID: "T-006", Languages: []string{"typescript"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("GlobalErrorHandler", "class", "errors.ts", facts.LangTypeScript, true, 1, 20),
+			{Language: facts.LangTypeScript, File: "app.module.ts", Span: facts.Span{Start: 5, End: 5},
+				Name: "NestJS:APP_PROVIDER", Kind: "provider_registration"},
+		},
+	}
+	ev := findGlobalErrorHandler(rule, fs)
 	if len(ev) == 0 {
-		t.Error("expected evidence for error+handler symbol")
+		t.Error("expected evidence for error+handler symbol with binding evidence")
 	}
 }
 
 func TestFindGlobalErrorHandler_BySymbol_ErrorMiddleware(t *testing.T) {
+	// Class-only definitions without binding evidence should NOT pass
 	rule := Rule{ID: "T-006", Languages: []string{"go"}}
 	fs := &FactSet{
 		Symbols: []facts.SymbolFact{
@@ -579,12 +642,13 @@ func TestFindGlobalErrorHandler_BySymbol_ErrorMiddleware(t *testing.T) {
 		},
 	}
 	ev := findGlobalErrorHandler(rule, fs)
-	if len(ev) == 0 {
-		t.Error("expected evidence for error+middleware symbol")
+	if len(ev) != 0 {
+		t.Error("expected NO evidence for error+middleware symbol without binding")
 	}
 }
 
 func TestFindGlobalErrorHandler_BySymbol_ExceptionHandler(t *testing.T) {
+	// Class-only definitions without binding evidence should NOT pass
 	rule := Rule{ID: "T-006", Languages: []string{"python"}}
 	fs := &FactSet{
 		Symbols: []facts.SymbolFact{
@@ -592,8 +656,8 @@ func TestFindGlobalErrorHandler_BySymbol_ExceptionHandler(t *testing.T) {
 		},
 	}
 	ev := findGlobalErrorHandler(rule, fs)
-	if len(ev) == 0 {
-		t.Error("expected evidence for exception+handler symbol")
+	if len(ev) != 0 {
+		t.Error("expected NO evidence for exception+handler symbol without binding")
 	}
 }
 
@@ -1607,5 +1671,212 @@ func TestFindExistsEvidence_DependencyInjection(t *testing.T) {
 	ev := findExistsEvidence(rule, fs)
 	if len(ev) == 0 {
 		t.Error("expected evidence via findExistsEvidence for architecture.dependency_injection")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// findExistsEvidence — frontend targets
+// ---------------------------------------------------------------------------
+
+func TestFindExistsEvidence_FrontendAuthGuard(t *testing.T) {
+	rule := Rule{ID: "T-200", Languages: []string{"javascript"}, Target: "frontend.auth_guard"}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("ProtectedRoute", "component", "routes.jsx", facts.LangJavaScript, true, 5, 20),
+		},
+	}
+	ev := findExistsEvidence(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence via findExistsEvidence for frontend.auth_guard")
+	}
+}
+
+func TestFindExistsEvidence_FrontendAPIErrorHandling(t *testing.T) {
+	rule := Rule{ID: "T-201", Languages: []string{"javascript"}, Target: "frontend.api_error_handling"}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("axios", "", "api.js", facts.LangJavaScript),
+		},
+	}
+	ev := findExistsEvidence(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence via findExistsEvidence for frontend.api_error_handling")
+	}
+}
+
+func TestFindExistsEvidence_FrontendCSP(t *testing.T) {
+	rule := Rule{ID: "T-202", Languages: []string{"javascript"}, Target: "frontend.csp_configured"}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("helmet", "", "server.js", facts.LangJavaScript),
+		},
+	}
+	ev := findExistsEvidence(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence via findExistsEvidence for frontend.csp_configured")
+	}
+}
+
+func TestFindExistsEvidence_FrontendLockfile(t *testing.T) {
+	rule := Rule{ID: "T-203", Languages: []string{"javascript"}, Target: "frontend.lockfile_exists"}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact("package-lock.json", facts.LangJavaScript),
+		},
+	}
+	ev := findExistsEvidence(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence via findExistsEvidence for frontend.lockfile_exists")
+	}
+}
+
+func TestFindExistsEvidence_FrontendFormValidation(t *testing.T) {
+	rule := Rule{ID: "T-204", Languages: []string{"javascript"}, Target: "frontend.form_validation"}
+	fs := &FactSet{
+		Imports: []facts.ImportFact{
+			imp("react-hook-form", "", "Form.jsx", facts.LangJavaScript),
+		},
+	}
+	ev := findExistsEvidence(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence via findExistsEvidence for frontend.form_validation")
+	}
+}
+
+func TestFindExistsEvidence_UnknownTarget(t *testing.T) {
+	rule := Rule{ID: "T-205", Languages: []string{"go"}, Target: "unknown.nonexistent"}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("main", "function", "main.go", facts.LangGo, false, 1, 5),
+		},
+	}
+	ev := findExistsEvidence(rule, fs)
+	if ev != nil {
+		t.Errorf("expected nil for unknown target, got %v", ev)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// findEnvBasedConfig — symbol branch coverage
+// ---------------------------------------------------------------------------
+
+func TestFindEnvBasedConfig_GetenvSymbol(t *testing.T) {
+	rule := Rule{ID: "T-210", Languages: []string{"go"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("Getenv", "function", "config.go", facts.LangGo, true, 1, 5),
+		},
+	}
+	ev := findEnvBasedConfig(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for getenv symbol")
+	}
+}
+
+func TestFindEnvBasedConfig_LoadenvSymbol(t *testing.T) {
+	rule := Rule{ID: "T-210b", Languages: []string{"go"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("Loadenv", "function", "config.go", facts.LangGo, true, 1, 5),
+		},
+	}
+	ev := findEnvBasedConfig(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for loadenv symbol")
+	}
+}
+
+func TestFindEnvBasedConfig_ConfigEnvSymbol(t *testing.T) {
+	rule := Rule{ID: "T-211", Languages: []string{"go"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("ConfigEnv", "function", "config.go", facts.LangGo, true, 1, 5),
+		},
+	}
+	ev := findEnvBasedConfig(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for config+env symbol")
+	}
+}
+
+func TestFindEnvBasedConfig_SymbolWrongLanguage(t *testing.T) {
+	rule := Rule{ID: "T-212", Languages: []string{"go"}}
+	fs := &FactSet{
+		Symbols: []facts.SymbolFact{
+			sym("GetEnvVar", "function", "config.py", facts.LangPython, true, 1, 5),
+		},
+	}
+	ev := findEnvBasedConfig(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for wrong language, got %d", len(ev))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// findEnvFileCommitted — additional edge cases
+// ---------------------------------------------------------------------------
+
+func TestFindEnvFileCommitted_EnvExample_Excluded(t *testing.T) {
+	rule := Rule{ID: "T-221", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact(".env.example", facts.LangJavaScript),
+		},
+	}
+	ev := findEnvFileCommitted(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for .env.example, got %d", len(ev))
+	}
+}
+
+func TestFindEnvFileCommitted_EnvTemplate_Excluded(t *testing.T) {
+	rule := Rule{ID: "T-222", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact(".env.template", facts.LangJavaScript),
+		},
+	}
+	ev := findEnvFileCommitted(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for .env.template, got %d", len(ev))
+	}
+}
+
+func TestFindEnvFileCommitted_EnvSample_Excluded(t *testing.T) {
+	rule := Rule{ID: "T-223", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact(".env.sample", facts.LangJavaScript),
+		},
+	}
+	ev := findEnvFileCommitted(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for .env.sample, got %d", len(ev))
+	}
+}
+
+func TestFindEnvFileCommitted_NotEnvFile(t *testing.T) {
+	rule := Rule{ID: "T-226", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact("config.json", facts.LangJavaScript),
+		},
+	}
+	ev := findEnvFileCommitted(rule, fs)
+	if len(ev) != 0 {
+		t.Errorf("expected no evidence for config.json, got %d", len(ev))
+	}
+}
+
+func TestFindEnvFileCommitted_EnvDevelopment_Flagged(t *testing.T) {
+	rule := Rule{ID: "T-227", Languages: []string{"javascript"}}
+	fs := &FactSet{
+		Files: []facts.FileFact{
+			fileFact(".env.development", facts.LangJavaScript),
+		},
+	}
+	ev := findEnvFileCommitted(rule, fs)
+	if len(ev) == 0 {
+		t.Error("expected evidence for .env.development")
 	}
 }

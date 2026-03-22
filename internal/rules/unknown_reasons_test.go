@@ -47,6 +47,12 @@ func TestUnknownReasonConstants(t *testing.T) {
 		UnknownPartialScan,
 		UnknownNeedsRuntimeConfig,
 		UnknownNeedsHumanAttestation,
+		UnknownCapabilityUnsupported,
+		UnknownCapabilityPartial,
+		UnknownCapabilityDegraded,
+		UnknownFactExtractionGap,
+		UnknownMatcherLimitation,
+		UnknownAnalyzerIncomplete,
 	}
 	for _, c := range constants {
 		if _, ok := ValidUnknownReasons[c]; !ok {

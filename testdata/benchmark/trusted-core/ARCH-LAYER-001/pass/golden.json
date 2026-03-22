@@ -1,0 +1,9 @@
+{
+  "rule_id": "ARCH-LAYER-001",
+  "scenario": "pass",
+  "expected_status": "pass",
+  "expected_trust_class": "advisory",
+  "expected_has_evidence": false,
+  "expected_verification_level": "strong_inference",
+  "description": "Controller delegates to service layer — no direct DB access from controller"
+}
