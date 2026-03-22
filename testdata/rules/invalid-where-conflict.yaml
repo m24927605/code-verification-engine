@@ -1,0 +1,14 @@
+version: "0.1"
+profile: "test"
+rules:
+  - id: "BAD-003"
+    title: "Where conflict"
+    category: "testing"
+    severity: "low"
+    languages: ["go"]
+    type: "exists"
+    target: "auth.jwt_middleware"
+    where:
+      name_matches: ["auth"]
+      name_exact: ["AuthService"]
+    message: "Conflict."

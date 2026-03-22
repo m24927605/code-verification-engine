@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "js-node-no-auth-frontend",
+  "profile": "frontend",
+  "expectations": [
+    {
+      "rule_id": "FE-DEP-001",
+      "expected_status": "pass",
+      "expected_trust_class": "machine_trusted",
+      "priority": "blocking",
+      "rationale": "The fixture includes package-lock.json and should continue to satisfy lockfile detection."
+    },
+    {
+      "rule_id": "FE-AUTH-001",
+      "expected_status": "fail",
+      "expected_trust_class": "advisory",
+      "priority": "blocking",
+      "rationale": "The fixture intentionally lacks route auth guards."
+    },
+    {
+      "rule_id": "FE-ERR-001",
+      "allowed_statuses": ["fail", "unknown"],
+      "expected_trust_class": "advisory",
+      "priority": "advisory",
+      "rationale": "Error-handling inference in small JS fixtures may remain heuristic, but the benchmark should never claim strong pass here."
+    }
+  ]
+}

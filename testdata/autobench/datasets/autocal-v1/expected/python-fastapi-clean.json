@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "python-fastapi-clean",
+  "profile": "backend-api",
+  "expectations": [
+    {
+      "rule_id": "SEC-AUTH-001",
+      "expected_status": "pass",
+      "expected_trust_class": "advisory",
+      "minimum_evidence_count": 1,
+      "priority": "blocking",
+      "rationale": "The FastAPI fixture includes JWT middleware and should retain auth detection."
+    },
+    {
+      "rule_id": "ARCH-LAYER-002",
+      "expected_status": "pass",
+      "expected_trust_class": "advisory",
+      "minimum_evidence_count": 1,
+      "priority": "advisory",
+      "rationale": "The clean Python fixture includes a repository layer and should continue to surface it."
+    },
+    {
+      "rule_id": "TEST-AUTH-001",
+      "allowed_statuses": ["pass", "unknown"],
+      "expected_trust_class": "human_or_runtime_required",
+      "priority": "advisory",
+      "rationale": "Python test discovery for auth modules may remain partial; this benchmark allows pass or unknown until module-level extraction is stronger."
+    }
+  ]
+}

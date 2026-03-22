@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/verabase/code-verification-engine/internal/git"
 )
@@ -562,6 +563,56 @@ func TestCreateWorkspaceBothMethodsFail(t *testing.T) {
 	}
 }
 
+func TestCreateWorkspaceWithCloneCheckoutSuccess(t *testing.T) {
+	// Ensure clone path works with a specific branch ref
+	repo := initTestRepo(t)
+
+	// Create a branch with a second commit
+	run(t, repo, "git", "checkout", "-b", "test-branch")
+	writeFile(t, filepath.Join(repo, "branch.go"), "package main\n")
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-m", "branch commit")
+
+	tmpRoot := t.TempDir()
+	ws, err := git.CreateWorkspaceWithClone(repo, "test-branch", tmpRoot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer git.CleanupWorkspace(ws)
+
+	// Should contain the branch-specific file
+	if _, err := os.Stat(filepath.Join(ws.Path, "branch.go")); os.IsNotExist(err) {
+		t.Fatal("expected branch.go in cloned workspace")
+	}
+	if ws.Ref != "test-branch" {
+		t.Fatalf("expected ref test-branch, got %q", ws.Ref)
+	}
+}
+
+func TestCreateWorkspaceCloneCheckoutInvalidSHA(t *testing.T) {
+	// Test createClone with a valid clone but invalid SHA for checkout
+	repo := initTestRepo(t)
+	tmpRoot := t.TempDir()
+
+	// We can't easily test this directly since CreateWorkspaceWithClone resolves
+	// the ref first. But we can test that the workspace name generation is unique.
+	ws1, err := git.CreateWorkspaceWithClone(repo, "HEAD", tmpRoot)
+	if err != nil {
+		t.Fatalf("ws1: %v", err)
+	}
+	defer git.CleanupWorkspace(ws1)
+
+	ws2, err := git.CreateWorkspaceWithClone(repo, "HEAD", tmpRoot)
+	if err != nil {
+		t.Fatalf("ws2: %v", err)
+	}
+	defer git.CleanupWorkspace(ws2)
+
+	if ws1.Path == ws2.Path {
+		t.Fatal("two clone workspaces should have unique paths")
+	}
+}
+
 func TestCreateWorkspaceMultipleUnique(t *testing.T) {
 	repo := initTestRepo(t)
 	tmpRoot := t.TempDir()
@@ -580,5 +631,127 @@ func TestCreateWorkspaceMultipleUnique(t *testing.T) {
 
 	if ws1.Path == ws2.Path {
 		t.Fatal("two workspaces should have unique paths")
+	}
+}
+
+func TestCreateWorkspaceWithCloneValidateFields(t *testing.T) {
+	repo := initTestRepo(t)
+	tmpRoot := t.TempDir()
+
+	ws, err := git.CreateWorkspaceWithClone(repo, "HEAD", tmpRoot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer git.CleanupWorkspace(ws)
+
+	if ws.IsWorktree {
+		t.Fatal("clone workspace should have IsWorktree=false")
+	}
+	if ws.Path == "" {
+		t.Fatal("path should not be empty")
+	}
+	if ws.SourceRepo == "" {
+		t.Fatal("source repo should not be empty")
+	}
+	if ws.CommitSHA == "" {
+		t.Fatal("commit SHA should not be empty")
+	}
+	if len(ws.CommitSHA) != 40 {
+		t.Fatalf("expected 40-char commit SHA, got %d chars", len(ws.CommitSHA))
+	}
+
+	// Verify the workspace contains the file
+	content, err := os.ReadFile(filepath.Join(ws.Path, "README.md"))
+	if err != nil {
+		t.Fatal("README.md should exist in cloned workspace")
+	}
+	if !strings.Contains(string(content), "test") {
+		t.Error("README.md should contain expected content")
+	}
+}
+
+func TestIsGitRepoGitNotInPath(t *testing.T) {
+	// When git is not in PATH, exec.Command returns a non-ExitError,
+	// which exercises the fallthrough error path in IsGitRepo.
+	t.Setenv("PATH", "/nonexistent")
+
+	ok, err := git.IsGitRepo(t.TempDir())
+	if ok {
+		t.Fatal("should not report as git repo when git is not found")
+	}
+	if err == nil {
+		t.Fatal("expected error when git is not found")
+	}
+}
+
+func TestCreateWorkspaceWithCloneGitNotInPath(t *testing.T) {
+	// Test that CreateWorkspaceWithClone fails gracefully when git is unavailable
+	repo := initTestRepo(t)
+	tmpRoot := t.TempDir()
+
+	t.Setenv("PATH", "/nonexistent")
+
+	_, err := git.CreateWorkspaceWithClone(repo, "HEAD", tmpRoot)
+	if err == nil {
+		t.Fatal("expected error when git is not in PATH")
+	}
+}
+
+func TestCreateWorkspaceWithCloneTreeSHAFails(t *testing.T) {
+	// Using a tree SHA (not a commit SHA) should fail at checkout,
+	// exercising the createClone checkout error path.
+	repo := initTestRepo(t)
+	tmpRoot := t.TempDir()
+
+	// Get the tree SHA (not the commit SHA)
+	cmd := exec.Command("git", "-C", repo, "rev-parse", "HEAD^{tree}")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("get tree SHA: %v\n%s", err, out)
+	}
+	treeSHA := strings.TrimSpace(string(out))
+
+	_, err = git.CreateWorkspaceWithClone(repo, treeSHA, tmpRoot)
+	if err == nil {
+		t.Fatal("expected error when using tree SHA (checkout should fail)")
+	}
+}
+
+func TestCreateWorkspaceTreeSHAFails(t *testing.T) {
+	// Using a tree SHA with CreateWorkspace should fail both worktree and clone paths.
+	repo := initTestRepo(t)
+	tmpRoot := t.TempDir()
+
+	cmd := exec.Command("git", "-C", repo, "rev-parse", "HEAD^{tree}")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("get tree SHA: %v\n%s", err, out)
+	}
+	treeSHA := strings.TrimSpace(string(out))
+
+	_, err = git.CreateWorkspace(repo, treeSHA, tmpRoot)
+	if err == nil {
+		t.Fatal("expected error when using tree SHA")
+	}
+}
+
+func TestPruneStaleWorkspacesNonCvePrefix(t *testing.T) {
+	tmpRoot := t.TempDir()
+
+	// Directories without cve- prefix should never be pruned
+	old := time.Now().Add(-100 * time.Hour)
+	dirs := []string{"other-dir", "workspace-1", "temp"}
+	for _, name := range dirs {
+		dir := filepath.Join(tmpRoot, name)
+		os.MkdirAll(dir, 0o755)
+		os.Chtimes(dir, old, old)
+	}
+
+	pruned, err := git.PruneStaleWorkspaces(tmpRoot, 0)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if pruned != 0 {
+		t.Fatalf("expected 0 pruned for non-cve dirs, got %d", pruned)
 	}
 }

@@ -245,6 +245,128 @@ func TestBuildFromResultsFailFinding(t *testing.T) {
 	}
 }
 
+func TestBuildFromResultsAllFactTypes(t *testing.T) {
+	results := []*analyzers.AnalysisResult{
+		{
+			Files: []facts.FileFact{
+				{Language: facts.LangGo, File: "main.go", LineCount: 50},
+			},
+			Symbols: []facts.SymbolFact{
+				{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 1, End: 10}, Name: "HandleRequest", Kind: "function", Exported: true},
+			},
+			Imports: []facts.ImportFact{
+				{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 3, End: 3}, ImportPath: "net/http"},
+			},
+			Routes: []facts.RouteFact{
+				{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 15, End: 15}, Method: "GET", Path: "/api/v1", Handler: "HandleRequest"},
+			},
+			Middlewares: []facts.MiddlewareFact{
+				{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 20, End: 25}, Name: "AuthMiddleware", Kind: "handler"},
+			},
+			Tests: []facts.TestFact{
+				{Language: facts.LangGo, File: "main_test.go", Span: facts.Span{Start: 1, End: 20}, TestName: "TestHandleRequest", TargetModule: "main"},
+			},
+			DataAccess: []facts.DataAccessFact{
+				{Language: facts.LangGo, File: "repo.go", Span: facts.Span{Start: 10, End: 15}, Operation: "SELECT", Backend: "postgres"},
+			},
+			Secrets: []facts.SecretFact{
+				{Language: facts.LangGo, File: "config.go", Span: facts.Span{Start: 5, End: 5}, Kind: "api_key"},
+			},
+		},
+	}
+
+	graph := BuildFromResults(results, nil)
+
+	// Should have: 1 file + 1 symbol + 1 import + 1 route + 1 middleware + 1 test + 1 data_access + 1 secret = 8
+	if graph.NodeCount() != 8 {
+		t.Errorf("expected 8 nodes, got %d", graph.NodeCount())
+	}
+
+	// Verify route node has metadata
+	found := false
+	for _, n := range graph.Nodes {
+		if n.Type == "route" {
+			found = true
+			if n.Metadata["method"] != "GET" {
+				t.Errorf("route method = %s, want GET", n.Metadata["method"])
+			}
+			if n.Metadata["path"] != "/api/v1" {
+				t.Errorf("route path = %s, want /api/v1", n.Metadata["path"])
+			}
+		}
+	}
+	if !found {
+		t.Error("route node not found")
+	}
+
+	// Verify middleware node
+	for _, n := range graph.Nodes {
+		if n.Type == "middleware" {
+			if n.Symbol != "AuthMiddleware" {
+				t.Errorf("middleware symbol = %s, want AuthMiddleware", n.Symbol)
+			}
+			if n.Metadata["kind"] != "handler" {
+				t.Errorf("middleware kind = %s, want handler", n.Metadata["kind"])
+			}
+		}
+	}
+
+	// Verify test node
+	for _, n := range graph.Nodes {
+		if n.Type == "test" {
+			if n.Metadata["target_module"] != "main" {
+				t.Errorf("test target_module = %s, want main", n.Metadata["target_module"])
+			}
+		}
+	}
+
+	// Verify data_access node
+	for _, n := range graph.Nodes {
+		if n.Type == "data_access" {
+			if n.Metadata["backend"] != "postgres" {
+				t.Errorf("data_access backend = %s, want postgres", n.Metadata["backend"])
+			}
+		}
+	}
+
+	// Verify secret node
+	for _, n := range graph.Nodes {
+		if n.Type == "secret" {
+			if n.Metadata["kind"] != "api_key" {
+				t.Errorf("secret kind = %s, want api_key", n.Metadata["kind"])
+			}
+		}
+	}
+}
+
+func TestBuildFromResultsLowConfidence(t *testing.T) {
+	results := []*analyzers.AnalysisResult{}
+	findings := []rules.Finding{
+		{
+			RuleID:     "TEST-001",
+			Status:     rules.StatusPass,
+			Confidence: rules.ConfidenceLow,
+			Message:    "Weak evidence",
+			Evidence: []rules.Evidence{
+				{File: "test.go", LineStart: 1, LineEnd: 5, Symbol: "foo"},
+			},
+		},
+	}
+
+	graph := BuildFromResults(results, findings)
+
+	// Should have low confidence weight = 0.4
+	if graph.EdgeCount() != 1 {
+		t.Fatalf("expected 1 edge, got %d", graph.EdgeCount())
+	}
+	if graph.Edges[0].Weight != 0.4 {
+		t.Errorf("expected weight 0.4 for low confidence, got %f", graph.Edges[0].Weight)
+	}
+	if graph.Edges[0].Relation != "supports" {
+		t.Errorf("expected supports relation, got %s", graph.Edges[0].Relation)
+	}
+}
+
 func TestNewGraphEmptyEdges(t *testing.T) {
 	g := New()
 	if g.Edges == nil {

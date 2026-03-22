@@ -20,6 +20,7 @@ func TestEvaluateClaim_AllPass(t *testing.T) {
 			Status:            rules.StatusPass,
 			Confidence:        rules.ConfidenceHigh,
 			VerificationLevel: rules.VerificationVerified,
+			TrustClass:        rules.TrustMachineTrusted,
 			Message:           "passed",
 		},
 		"RULE-2": {
@@ -27,6 +28,7 @@ func TestEvaluateClaim_AllPass(t *testing.T) {
 			Status:            rules.StatusPass,
 			Confidence:        rules.ConfidenceMedium,
 			VerificationLevel: rules.VerificationStrongInference,
+			TrustClass:        rules.TrustMachineTrusted,
 			Message:           "passed",
 		},
 	}
@@ -44,6 +46,12 @@ func TestEvaluateClaim_AllPass(t *testing.T) {
 	}
 	if len(verdict.SupportingRules) != 2 {
 		t.Errorf("expected 2 supporting rules, got %d", len(verdict.SupportingRules))
+	}
+	if verdict.TrustBreakdown.MachineTrusted != 2 {
+		t.Errorf("expected 2 machine_trusted, got %d", verdict.TrustBreakdown.MachineTrusted)
+	}
+	if verdict.TrustBreakdown.EffectiveTrustClass != "machine_trusted" {
+		t.Errorf("expected effective trust class machine_trusted, got %s", verdict.TrustBreakdown.EffectiveTrustClass)
 	}
 }
 
@@ -243,9 +251,9 @@ func TestEvaluator_Evaluate(t *testing.T) {
 
 	execResult := rules.ExecutionResult{
 		Findings: []rules.Finding{
-			{RuleID: "R1", Status: rules.StatusPass, Confidence: rules.ConfidenceHigh},
-			{RuleID: "R2", Status: rules.StatusFail, Confidence: rules.ConfidenceHigh},
-			{RuleID: "R3", Status: rules.StatusUnknown, Confidence: rules.ConfidenceLow},
+			{RuleID: "R1", Status: rules.StatusPass, Confidence: rules.ConfidenceHigh, VerificationLevel: rules.VerificationVerified, TrustClass: rules.TrustMachineTrusted},
+			{RuleID: "R2", Status: rules.StatusFail, Confidence: rules.ConfidenceHigh, TrustClass: rules.TrustAdvisory},
+			{RuleID: "R3", Status: rules.StatusUnknown, Confidence: rules.ConfidenceLow, TrustClass: rules.TrustAdvisory},
 		},
 	}
 
@@ -292,6 +300,95 @@ func TestBuiltInClaimSets_ValidRuleIDs(t *testing.T) {
 	}
 }
 
+func TestListClaimSetNames(t *testing.T) {
+	names := ListClaimSetNames()
+	if len(names) != 3 {
+		t.Fatalf("expected 3 claim set names, got %d: %v", len(names), names)
+	}
+	expected := map[string]bool{
+		"backend-security":     true,
+		"backend-architecture": true,
+		"fullstack-security":   true,
+	}
+	for _, name := range names {
+		if !expected[name] {
+			t.Errorf("unexpected claim set name: %s", name)
+		}
+	}
+}
+
+func TestConfidenceRankDefault(t *testing.T) {
+	// Test the default case of confidenceRank
+	if confidenceRank("unknown_value") != 0 {
+		t.Error("expected 0 for unknown confidence value")
+	}
+	if confidenceRank("") != 0 {
+		t.Error("expected 0 for empty confidence value")
+	}
+}
+
+func TestVerificationRankDefault(t *testing.T) {
+	// Test the default case of verificationRank
+	if verificationRank("unknown_value") != 0 {
+		t.Error("expected 0 for unknown verification value")
+	}
+	if verificationRank("") != 0 {
+		t.Error("expected 0 for empty verification value")
+	}
+}
+
+func TestEvaluator_EvaluatePartialVerdict(t *testing.T) {
+	cs := &ClaimSet{
+		Name: "test-set",
+		Claims: []Claim{
+			{ID: "c1", Title: "Claim 1", Category: "security", RuleIDs: []string{"R1", "R2"}},
+		},
+	}
+
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{RuleID: "R1", Status: rules.StatusPass, Confidence: rules.ConfidenceMedium},
+			{RuleID: "R2", Status: rules.StatusUnknown, Confidence: rules.ConfidenceLow},
+		},
+	}
+
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Partial != 1 {
+		t.Errorf("expected 1 partial, got %d", report.Verdicts.Partial)
+	}
+	if report.Verdicts.Passed != 0 {
+		t.Errorf("expected 0 passed (partial is not pass), got %d", report.Verdicts.Passed)
+	}
+}
+
+func TestEvaluator_EvaluatePassWithLowConfidence(t *testing.T) {
+	// Pass with non-high confidence should increment Passed but NOT Verified
+	cs := &ClaimSet{
+		Name: "test-set",
+		Claims: []Claim{
+			{ID: "c1", Title: "Claim 1", Category: "security", RuleIDs: []string{"R1"}},
+		},
+	}
+
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{RuleID: "R1", Status: rules.StatusPass, Confidence: rules.ConfidenceMedium},
+		},
+	}
+
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Passed != 1 {
+		t.Errorf("expected 1 passed, got %d", report.Verdicts.Passed)
+	}
+	if report.Verdicts.Verified != 0 {
+		t.Errorf("expected 0 verified (medium confidence), got %d", report.Verdicts.Verified)
+	}
+}
+
 func TestGetClaimSet(t *testing.T) {
 	cs, ok := GetClaimSet("backend-security")
 	if !ok {
@@ -310,6 +407,67 @@ func TestGetClaimSet(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Trust boundary regression tests
+// ---------------------------------------------------------------------------
+
+func TestVerifiedRequiresVerificationLevel(t *testing.T) {
+	// A claim with pass + high confidence but only strong_inference
+	// must NOT be counted as verified.
+	cs := &ClaimSet{
+		Name: "test",
+		Claims: []Claim{
+			{ID: "c1", Title: "Advisory claim", Category: "security", RuleIDs: []string{"R1"}},
+		},
+	}
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{
+				RuleID:            "R1",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationStrongInference, // advisory downgraded
+			},
+		},
+	}
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Passed != 1 {
+		t.Errorf("expected 1 passed, got %d", report.Verdicts.Passed)
+	}
+	if report.Verdicts.Verified != 0 {
+		t.Errorf("strong_inference must NOT count as verified, got %d", report.Verdicts.Verified)
+	}
+}
+
+func TestVerifiedOnlyWithVerifiedLevel(t *testing.T) {
+	// Only pass + high + verified + machine_trusted should count as verified.
+	cs := &ClaimSet{
+		Name: "test",
+		Claims: []Claim{
+			{ID: "c1", Title: "Trusted claim", Category: "security", RuleIDs: []string{"R1"}},
+		},
+	}
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{
+				RuleID:            "R1",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationVerified,
+				TrustClass:        rules.TrustMachineTrusted,
+			},
+		},
+	}
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Verified != 1 {
+		t.Errorf("pass + high + verified + machine_trusted should count as verified, got %d", report.Verdicts.Verified)
+	}
+}
+
 func TestEvaluateClaim_NoRules(t *testing.T) {
 	claim := Claim{
 		ID:       "test.empty",
@@ -322,5 +480,308 @@ func TestEvaluateClaim_NoRules(t *testing.T) {
 
 	if verdict.Status != "unknown" {
 		t.Errorf("expected status unknown for empty rule list, got %s", verdict.Status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Trust boundary: advisory findings must never count as Verified
+// ---------------------------------------------------------------------------
+
+func TestAdvisoryFindingsNeverVerified(t *testing.T) {
+	cs := &ClaimSet{
+		Name: "test",
+		Claims: []Claim{
+			{ID: "c1", Title: "Advisory claim", Category: "security", RuleIDs: []string{"R1"}},
+		},
+	}
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{
+				RuleID:            "R1",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationVerified, // Even if set to verified
+				TrustClass:        rules.TrustAdvisory,         // Advisory must NOT count
+			},
+		},
+	}
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Verified != 0 {
+		t.Errorf("advisory findings must NOT count as verified, got %d", report.Verdicts.Verified)
+	}
+	if report.Verdicts.Passed != 1 {
+		t.Errorf("advisory findings should still count as passed, got %d", report.Verdicts.Passed)
+	}
+}
+
+func TestHumanRequiredFindingsNeverVerified(t *testing.T) {
+	cs := &ClaimSet{
+		Name: "test",
+		Claims: []Claim{
+			{ID: "c1", Title: "Human claim", Category: "security", RuleIDs: []string{"R1"}},
+		},
+	}
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{
+				RuleID:            "R1",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationVerified,
+				TrustClass:        rules.TrustHumanOrRuntimeRequired,
+			},
+		},
+	}
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Verified != 0 {
+		t.Errorf("human_or_runtime_required findings must NOT count as verified, got %d", report.Verdicts.Verified)
+	}
+}
+
+func TestMixedTrustClassUsesLowest(t *testing.T) {
+	claim := Claim{
+		ID:       "test.mixed_trust",
+		Title:    "Mixed trust",
+		Category: "testing",
+		RuleIDs:  []string{"R1", "R2"},
+	}
+	ruleResults := map[string]rules.Finding{
+		"R1": {
+			RuleID:            "R1",
+			Status:            rules.StatusPass,
+			Confidence:        rules.ConfidenceHigh,
+			VerificationLevel: rules.VerificationVerified,
+			TrustClass:        rules.TrustMachineTrusted,
+		},
+		"R2": {
+			RuleID:            "R2",
+			Status:            rules.StatusPass,
+			Confidence:        rules.ConfidenceMedium,
+			VerificationLevel: rules.VerificationStrongInference,
+			TrustClass:        rules.TrustAdvisory,
+		},
+	}
+
+	verdict := evaluateClaim(claim, ruleResults)
+
+	if verdict.TrustBreakdown.EffectiveTrustClass != "advisory" {
+		t.Errorf("mixed trust claim should use lowest trust class (advisory), got %s", verdict.TrustBreakdown.EffectiveTrustClass)
+	}
+	if verdict.TrustBreakdown.MachineTrusted != 1 {
+		t.Errorf("expected 1 machine_trusted, got %d", verdict.TrustBreakdown.MachineTrusted)
+	}
+	if verdict.TrustBreakdown.Advisory != 1 {
+		t.Errorf("expected 1 advisory, got %d", verdict.TrustBreakdown.Advisory)
+	}
+}
+
+func TestMixedTrustClaimNotVerified(t *testing.T) {
+	// A claim with mixed trust classes (machine_trusted + advisory) must NOT be verified
+	cs := &ClaimSet{
+		Name: "test",
+		Claims: []Claim{
+			{ID: "c1", Title: "Mixed claim", Category: "security", RuleIDs: []string{"R1", "R2"}},
+		},
+	}
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{
+				RuleID:            "R1",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationVerified,
+				TrustClass:        rules.TrustMachineTrusted,
+			},
+			{
+				RuleID:            "R2",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationVerified,
+				TrustClass:        rules.TrustAdvisory,
+			},
+		},
+	}
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Verified != 0 {
+		t.Errorf("mixed trust class claim must NOT count as verified, got %d", report.Verdicts.Verified)
+	}
+}
+
+func TestTrustClassRankDefault(t *testing.T) {
+	if trustClassRank("") != 0 {
+		t.Error("expected 0 for empty trust class")
+	}
+	if trustClassRank("invalid") != 0 {
+		t.Error("expected 0 for invalid trust class")
+	}
+}
+
+func TestTrustClassFromRankDefault(t *testing.T) {
+	if trustClassFromRank(0) != "" {
+		t.Error("expected empty string for rank 0")
+	}
+	if trustClassFromRank(-1) != "" {
+		t.Error("expected empty string for rank -1")
+	}
+}
+
+// --- Mixed trust class claims: trust-class collapsing prevention tests ---
+
+func TestMixedTrustClass_MachineTrustedAndAdvisory_EffectiveIsAdvisory(t *testing.T) {
+	// A claim with BOTH machine_trusted and advisory rules must get
+	// EffectiveTrustClass = advisory (the lowest).
+	claim := Claim{
+		ID:       "test.mixed_mt_adv",
+		Title:    "Mixed machine_trusted + advisory",
+		Category: "security",
+		RuleIDs:  []string{"R1", "R2", "R3"},
+	}
+	ruleResults := map[string]rules.Finding{
+		"R1": {
+			RuleID:            "R1",
+			Status:            rules.StatusPass,
+			Confidence:        rules.ConfidenceHigh,
+			VerificationLevel: rules.VerificationVerified,
+			TrustClass:        rules.TrustMachineTrusted,
+		},
+		"R2": {
+			RuleID:            "R2",
+			Status:            rules.StatusPass,
+			Confidence:        rules.ConfidenceHigh,
+			VerificationLevel: rules.VerificationVerified,
+			TrustClass:        rules.TrustMachineTrusted,
+		},
+		"R3": {
+			RuleID:            "R3",
+			Status:            rules.StatusPass,
+			Confidence:        rules.ConfidenceMedium,
+			VerificationLevel: rules.VerificationStrongInference,
+			TrustClass:        rules.TrustAdvisory,
+		},
+	}
+
+	verdict := evaluateClaim(claim, ruleResults)
+
+	if verdict.TrustBreakdown.EffectiveTrustClass != "advisory" {
+		t.Errorf("mixed machine_trusted+advisory claim must have effective trust class advisory, got %s",
+			verdict.TrustBreakdown.EffectiveTrustClass)
+	}
+	if verdict.TrustBreakdown.MachineTrusted != 2 {
+		t.Errorf("expected 2 machine_trusted in breakdown, got %d", verdict.TrustBreakdown.MachineTrusted)
+	}
+	if verdict.TrustBreakdown.Advisory != 1 {
+		t.Errorf("expected 1 advisory in breakdown, got %d", verdict.TrustBreakdown.Advisory)
+	}
+}
+
+func TestMixedTrustClass_AllThree_EffectiveIsHumanRequired(t *testing.T) {
+	// A claim with all three trust classes must get
+	// EffectiveTrustClass = human_or_runtime_required (the lowest).
+	claim := Claim{
+		ID:       "test.mixed_all_three",
+		Title:    "All three trust classes",
+		Category: "security",
+		RuleIDs:  []string{"R1", "R2", "R3"},
+	}
+	ruleResults := map[string]rules.Finding{
+		"R1": {
+			RuleID:     "R1",
+			Status:     rules.StatusPass,
+			Confidence: rules.ConfidenceHigh,
+			TrustClass: rules.TrustMachineTrusted,
+		},
+		"R2": {
+			RuleID:     "R2",
+			Status:     rules.StatusPass,
+			Confidence: rules.ConfidenceMedium,
+			TrustClass: rules.TrustAdvisory,
+		},
+		"R3": {
+			RuleID:     "R3",
+			Status:     rules.StatusPass,
+			Confidence: rules.ConfidenceLow,
+			TrustClass: rules.TrustHumanOrRuntimeRequired,
+		},
+	}
+
+	verdict := evaluateClaim(claim, ruleResults)
+
+	if verdict.TrustBreakdown.EffectiveTrustClass != "human_or_runtime_required" {
+		t.Errorf("expected effective trust human_or_runtime_required, got %s",
+			verdict.TrustBreakdown.EffectiveTrustClass)
+	}
+}
+
+func TestTrustBreakdown_AlwaysPopulated(t *testing.T) {
+	// TrustBreakdown must be populated for any claim with rules,
+	// even when all rules are the same trust class.
+	claim := Claim{
+		ID:       "test.single_class",
+		Title:    "Single class",
+		Category: "testing",
+		RuleIDs:  []string{"R1"},
+	}
+	ruleResults := map[string]rules.Finding{
+		"R1": {
+			RuleID:     "R1",
+			Status:     rules.StatusPass,
+			Confidence: rules.ConfidenceHigh,
+			TrustClass: rules.TrustAdvisory,
+		},
+	}
+
+	verdict := evaluateClaim(claim, ruleResults)
+
+	if verdict.TrustBreakdown.Advisory != 1 {
+		t.Errorf("expected advisory=1, got %d", verdict.TrustBreakdown.Advisory)
+	}
+	if verdict.TrustBreakdown.EffectiveTrustClass != "advisory" {
+		t.Errorf("expected effective trust advisory, got %s", verdict.TrustBreakdown.EffectiveTrustClass)
+	}
+}
+
+func TestMixedTrustClaimViaEvaluator_NotVerified(t *testing.T) {
+	// End-to-end via Evaluator: mixed trust claim must NOT be counted as verified
+	cs := &ClaimSet{
+		Name: "test",
+		Claims: []Claim{
+			{ID: "c1", Title: "Mixed trust", Category: "security", RuleIDs: []string{"R1", "R2"}},
+		},
+	}
+	execResult := rules.ExecutionResult{
+		Findings: []rules.Finding{
+			{
+				RuleID:            "R1",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationVerified,
+				TrustClass:        rules.TrustMachineTrusted,
+			},
+			{
+				RuleID:            "R2",
+				Status:            rules.StatusPass,
+				Confidence:        rules.ConfidenceHigh,
+				VerificationLevel: rules.VerificationStrongInference,
+				TrustClass:        rules.TrustAdvisory,
+			},
+		},
+	}
+	eval := NewEvaluator()
+	report := eval.Evaluate(cs, execResult)
+
+	if report.Verdicts.Verified != 0 {
+		t.Errorf("mixed trust class claim must NOT count as verified, got %d", report.Verdicts.Verified)
+	}
+	if report.Verdicts.Passed != 1 {
+		t.Errorf("expected 1 passed, got %d", report.Verdicts.Passed)
+	}
+	if report.Claims[0].TrustBreakdown.EffectiveTrustClass != "advisory" {
+		t.Errorf("expected effective trust advisory, got %s", report.Claims[0].TrustBreakdown.EffectiveTrustClass)
 	}
 }

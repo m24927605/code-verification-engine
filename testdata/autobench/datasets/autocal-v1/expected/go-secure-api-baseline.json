@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "go-secure-api-baseline",
+  "profile": "backend-api",
+  "expectations": [
+    {
+      "rule_id": "SEC-AUTH-001",
+      "expected_status": "pass",
+      "expected_trust_class": "advisory",
+      "minimum_evidence_count": 1,
+      "priority": "blocking",
+      "rationale": "The fixture contains explicit JWT auth middleware and should continue to satisfy baseline auth detection."
+    },
+    {
+      "rule_id": "SEC-SECRET-003",
+      "expected_status": "pass",
+      "expected_trust_class": "machine_trusted",
+      "priority": "blocking",
+      "rationale": "No committed .env file should exist in the clean Go repo."
+    },
+    {
+      "rule_id": "ARCH-LAYER-002",
+      "expected_status": "pass",
+      "expected_trust_class": "advisory",
+      "minimum_evidence_count": 1,
+      "priority": "advisory",
+      "rationale": "The repo fixture includes a repository/data access layer and should keep producing repository evidence."
+    }
+  ]
+}

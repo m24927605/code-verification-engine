@@ -98,6 +98,65 @@ func TestPruneStaleWorkspaces(t *testing.T) {
 	}
 }
 
+func TestPruneStaleWorkspacesMultiple(t *testing.T) {
+	tmpRoot := t.TempDir()
+
+	// Create multiple stale workspaces
+	old := time.Now().Add(-25 * time.Hour)
+	for _, name := range []string{"cve-repo1-aaa-1-xx", "cve-repo2-bbb-2-yy"} {
+		dir := filepath.Join(tmpRoot, name)
+		os.MkdirAll(dir, 0o755)
+		os.Chtimes(dir, old, old)
+	}
+
+	pruned, err := git.PruneStaleWorkspaces(tmpRoot, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if pruned != 2 {
+		t.Fatalf("expected 2 pruned, got %d", pruned)
+	}
+}
+
+func TestPruneStaleWorkspacesZeroRetention(t *testing.T) {
+	tmpRoot := t.TempDir()
+
+	// Create a fresh workspace - with 0 retention, all should be pruned
+	dir := filepath.Join(tmpRoot, "cve-test-fresh-1-aa")
+	os.MkdirAll(dir, 0o755)
+
+	pruned, err := git.PruneStaleWorkspaces(tmpRoot, 0)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("expected 1 pruned with 0 retention, got %d", pruned)
+	}
+}
+
+func TestPruneStaleWorkspacesRemoveAllError(t *testing.T) {
+	tmpRoot := t.TempDir()
+
+	// Create a stale cve- directory
+	staleDir := filepath.Join(tmpRoot, "cve-stale-unremovable-1-aa")
+	os.MkdirAll(staleDir, 0o755)
+	old := time.Now().Add(-25 * time.Hour)
+	os.Chtimes(staleDir, old, old)
+
+	// Make the parent directory read-only so os.RemoveAll fails
+	os.Chmod(tmpRoot, 0o555)
+	defer os.Chmod(tmpRoot, 0o755)
+
+	pruned, err := git.PruneStaleWorkspaces(tmpRoot, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("prune should not return error (best-effort): %v", err)
+	}
+	// RemoveAll should fail, so nothing is actually pruned
+	if pruned != 0 {
+		t.Fatalf("expected 0 pruned when parent is read-only, got %d", pruned)
+	}
+}
+
 func TestPruneStaleWorkspacesEmptyDir(t *testing.T) {
 	tmpRoot := t.TempDir()
 	pruned, err := git.PruneStaleWorkspaces(tmpRoot, 24*time.Hour)

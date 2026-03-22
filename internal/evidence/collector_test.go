@@ -77,6 +77,74 @@ func TestGenerateEvidenceID(t *testing.T) {
 	}
 }
 
+func TestReadExcerptFileNotFound(t *testing.T) {
+	result := readExcerpt("/nonexistent/dir", "missing.go", 1, 5)
+	if result != "" {
+		t.Errorf("expected empty string for missing file, got %q", result)
+	}
+}
+
+func TestReadExcerptInvalidLineStart(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("line1\nline2\n"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// lineStart < 1
+	result := readExcerpt(tmpDir, "test.go", 0, 2)
+	if result != "" {
+		t.Errorf("expected empty for lineStart=0, got %q", result)
+	}
+
+	// lineStart > number of lines
+	result = readExcerpt(tmpDir, "test.go", 100, 200)
+	if result != "" {
+		t.Errorf("expected empty for lineStart=100, got %q", result)
+	}
+}
+
+func TestReadExcerptLineEndBeyondFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	err := os.WriteFile(filepath.Join(tmpDir, "test.go"), []byte("line1\nline2\nline3\n"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// lineEnd beyond file length should be clamped
+	result := readExcerpt(tmpDir, "test.go", 2, 100)
+	if !strings.Contains(result, "line2") {
+		t.Errorf("expected line2 in result, got %q", result)
+	}
+}
+
+func TestReadExcerptAbsolutePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	absPath := filepath.Join(tmpDir, "test.go")
+	err := os.WriteFile(absPath, []byte("line1\nline2\n"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When file is absolute path, scanDir should not be prepended
+	result := readExcerpt("", absPath, 1, 1)
+	if result != "line1" {
+		t.Errorf("expected 'line1', got %q", result)
+	}
+}
+
+func TestEnrichPreservesExistingExcerpt(t *testing.T) {
+	c := NewCollector()
+	evidence := []facts.Evidence{
+		{Type: "symbol", File: "test.go", LineStart: 1, LineEnd: 2, Symbol: "foo", Excerpt: "existing"},
+	}
+
+	enriched := c.Enrich(evidence, "/some/dir")
+	if enriched[0].Excerpt != "existing" {
+		t.Errorf("expected existing excerpt to be preserved, got %q", enriched[0].Excerpt)
+	}
+}
+
 func TestCollectorEnrich(t *testing.T) {
 	c := NewCollector()
 	tmpDir := t.TempDir()

@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "go-bad-controller-db",
+  "profile": "backend-api",
+  "expectations": [
+    {
+      "rule_id": "ARCH-LAYER-001",
+      "expected_status": "fail",
+      "expected_trust_class": "advisory",
+      "minimum_evidence_count": 1,
+      "priority": "blocking",
+      "rationale": "The negative fixture intentionally performs direct DB access from handler/controller code."
+    },
+    {
+      "rule_id": "ARCH-PATTERN-001",
+      "expected_status": "fail",
+      "expected_trust_class": "advisory",
+      "minimum_evidence_count": 1,
+      "priority": "blocking",
+      "rationale": "Database access is intentionally not encapsulated in a repository layer in this fixture."
+    }
+  ]
+}

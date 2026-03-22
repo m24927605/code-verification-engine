@@ -32,10 +32,19 @@ type ClaimVerdict struct {
 	Status            string         `json:"status"`             // pass, fail, unknown, partial
 	Confidence        string         `json:"confidence"`         // high, medium, low
 	VerificationLevel string         `json:"verification_level"` // verified, strong_inference, weak_inference
+	TrustBreakdown    TrustBreakdown `json:"trust_breakdown"`    // Trust class distribution across supporting rules
 	Summary           string         `json:"summary"`            // Human-readable verdict summary
 	SupportingRules   []RuleResult   `json:"supporting_rules"`   // Individual rule results
 	EvidenceChain     []EvidenceLink `json:"evidence_chain"`     // Connected evidence
 	UnknownReasons    []string       `json:"unknown_reasons,omitempty"`
+}
+
+// TrustBreakdown counts the trust classes of rules contributing to a claim.
+type TrustBreakdown struct {
+	MachineTrusted         int    `json:"machine_trusted"`
+	Advisory               int    `json:"advisory"`
+	HumanOrRuntimeRequired int    `json:"human_or_runtime_required"`
+	EffectiveTrustClass    string `json:"effective_trust_class"` // Lowest trust class among contributing rules
 }
 
 // RuleResult links a rule evaluation to a claim.

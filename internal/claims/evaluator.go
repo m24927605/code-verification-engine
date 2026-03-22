@@ -32,7 +32,11 @@ func (e *Evaluator) Evaluate(claimSet *ClaimSet, execResult rules.ExecutionResul
 
 		switch verdict.Status {
 		case "pass":
-			if verdict.Confidence == "high" {
+			// Advisory findings must never count toward Verified.
+			// Only machine_trusted claims with high confidence and verified level qualify.
+			if verdict.Confidence == "high" &&
+				verdict.VerificationLevel == "verified" &&
+				verdict.TrustBreakdown.EffectiveTrustClass == string(rules.TrustMachineTrusted) {
 				report.Verdicts.Verified++
 			}
 			report.Verdicts.Passed++
@@ -61,6 +65,10 @@ func evaluateClaim(claim Claim, ruleResults map[string]rules.Finding) ClaimVerdi
 	passCount, failCount, unknownCount := 0, 0, 0
 	highestConfidence := "low"
 	bestVerification := "weak_inference"
+
+	// Track trust breakdown across contributing rules
+	var trustBreakdown TrustBreakdown
+	lowestTrust := -1 // -1 = unset
 
 	for _, ruleID := range claim.RuleIDs {
 		finding, ok := ruleResults[ruleID]
@@ -96,6 +104,20 @@ func evaluateClaim(claim Claim, ruleResults map[string]rules.Finding) ClaimVerdi
 			bestVerification = string(finding.VerificationLevel)
 		}
 
+		// Track trust class distribution
+		rank := trustClassRank(finding.TrustClass)
+		switch finding.TrustClass {
+		case rules.TrustMachineTrusted:
+			trustBreakdown.MachineTrusted++
+		case rules.TrustAdvisory:
+			trustBreakdown.Advisory++
+		case rules.TrustHumanOrRuntimeRequired:
+			trustBreakdown.HumanOrRuntimeRequired++
+		}
+		if lowestTrust < 0 || rank < lowestTrust {
+			lowestTrust = rank
+		}
+
 		// Build evidence chain
 		for _, ev := range finding.Evidence {
 			linkType := "supports"
@@ -114,6 +136,10 @@ func evaluateClaim(claim Claim, ruleResults map[string]rules.Finding) ClaimVerdi
 			})
 		}
 	}
+
+	// Set effective trust class to the LOWEST among contributing rules
+	trustBreakdown.EffectiveTrustClass = trustClassFromRank(lowestTrust)
+	verdict.TrustBreakdown = trustBreakdown
 
 	verdict.SupportingRules = supporting
 	verdict.EvidenceChain = evidenceChain
@@ -140,6 +166,34 @@ func evaluateClaim(claim Claim, ruleResults map[string]rules.Finding) ClaimVerdi
 	}
 
 	return verdict
+}
+
+// trustClassRank returns a numeric rank for trust classes (lower = less trusted).
+func trustClassRank(tc rules.TrustClass) int {
+	switch tc {
+	case rules.TrustMachineTrusted:
+		return 3
+	case rules.TrustAdvisory:
+		return 2
+	case rules.TrustHumanOrRuntimeRequired:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// trustClassFromRank converts a numeric rank back to a trust class string.
+func trustClassFromRank(rank int) string {
+	switch rank {
+	case 3:
+		return string(rules.TrustMachineTrusted)
+	case 2:
+		return string(rules.TrustAdvisory)
+	case 1:
+		return string(rules.TrustHumanOrRuntimeRequired)
+	default:
+		return ""
+	}
 }
 
 func confidenceRank(c string) int {

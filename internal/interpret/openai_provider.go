@@ -9,28 +9,34 @@ import (
 	"net/http"
 )
 
-// HTTPProvider sends prompts to an LLM API endpoint.
-type HTTPProvider struct {
+// OpenAIProvider sends prompts to an OpenAI-compatible API endpoint
+// (OpenAI, Azure OpenAI, or any OpenAI-compatible service).
+type OpenAIProvider struct {
 	apiKey           string
 	apiURL           string
+	model            string
 	client           *http.Client
 	MaxResponseBytes int64 // 0 = use default (65536)
 }
 
-// NewHTTPProvider creates a provider that calls the given API endpoint.
-func NewHTTPProvider(apiKey, apiURL string) *HTTPProvider {
-	return &HTTPProvider{
+// NewOpenAIProvider creates a provider that calls an OpenAI-compatible chat completions endpoint.
+// If model is empty, defaults to "o3-mini".
+func NewOpenAIProvider(apiKey, apiURL, model string) *OpenAIProvider {
+	if model == "" {
+		model = "o3-mini"
+	}
+	return &OpenAIProvider{
 		apiKey:           apiKey,
 		apiURL:           apiURL,
+		model:            model,
 		client:           &http.Client{},
 		MaxResponseBytes: 65536,
 	}
 }
 
-func (p *HTTPProvider) Complete(ctx context.Context, prompt string) (string, error) {
+func (p *OpenAIProvider) Complete(ctx context.Context, prompt string) (string, error) {
 	body := map[string]interface{}{
-		"model":      "claude-sonnet-4-20250514",
-		"max_tokens": 1024,
+		"model": p.model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
@@ -45,8 +51,7 @@ func (p *HTTPProvider) Complete(ctx context.Context, prompt string) (string, err
 		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", p.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -71,15 +76,17 @@ func (p *HTTPProvider) Complete(ctx context.Context, prompt string) (string, err
 	}
 
 	var result struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("parse response: %w", err)
 	}
-	if len(result.Content) == 0 {
+	if len(result.Choices) == 0 {
 		return "", nil
 	}
-	return result.Content[0].Text, nil
+	return result.Choices[0].Message.Content, nil
 }

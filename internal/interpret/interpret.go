@@ -52,8 +52,10 @@ type InterpretedFinding struct {
 
 // InterpretedReport wraps the deterministic report with interpretation.
 type InterpretedReport struct {
-	Findings []InterpretedFinding  `json:"findings"`
-	Summary  InterpretationSummary `json:"interpretation_summary"`
+	Findings   []InterpretedFinding  `json:"findings"`
+	Summary    InterpretationSummary `json:"interpretation_summary"`
+	ErrorCount int                   `json:"error_count"`  // Number of LLM calls that failed
+	SkipCount  int                   `json:"skip_count"`   // Number of findings whose interpretation was skipped
 }
 
 // InterpretationSummary provides high-level triage info.
@@ -82,6 +84,8 @@ func (i *Interpreter) Interpret(ctx context.Context, findings []rules.Finding, c
 			response, err := i.provider.Complete(ctx, prompt)
 			if err != nil {
 				// LLM failure is non-fatal — just skip interpretation
+				report.ErrorCount++
+				report.SkipCount++
 				report.Findings = append(report.Findings, interpreted)
 				continue
 			}
@@ -97,7 +101,9 @@ func (i *Interpreter) Interpret(ctx context.Context, findings []rules.Finding, c
 		if f.Status == rules.StatusUnknown {
 			prompt := buildUnknownPrompt(f, codeSnippets)
 			response, err := i.provider.Complete(ctx, prompt)
-			if err == nil {
+			if err != nil {
+				report.ErrorCount++
+			} else {
 				parseUnknownResponse(response, &interpreted)
 			}
 		}

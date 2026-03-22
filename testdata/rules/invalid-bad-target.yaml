@@ -1,0 +1,11 @@
+version: "0.1"
+profile: "test"
+rules:
+  - id: "BAD-002"
+    title: "Bad target"
+    category: "security"
+    severity: "high"
+    languages: ["go"]
+    type: "exists"
+    target: "nonexistent.target"
+    message: "Bad."

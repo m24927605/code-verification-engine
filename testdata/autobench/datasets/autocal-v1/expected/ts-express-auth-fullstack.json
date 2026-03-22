@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "ts-express-auth-fullstack",
+  "profile": "fullstack",
+  "claim_set": "fullstack-security",
+  "expectations": [
+    {
+      "rule_id": "SEC-AUTH-001",
+      "expected_status": "pass",
+      "expected_trust_class": "advisory",
+      "minimum_evidence_count": 1,
+      "priority": "blocking",
+      "rationale": "The TypeScript fixture includes auth middleware and should keep satisfying JWT/auth checks."
+    },
+    {
+      "rule_id": "SEC-CORS-001",
+      "expected_status": "pass",
+      "expected_trust_class": "advisory",
+      "priority": "blocking",
+      "rationale": "The fixture is intended to represent a secure TS API and should keep explicit CORS configuration."
+    },
+    {
+      "rule_id": "FE-DEP-001",
+      "expected_status": "pass",
+      "expected_trust_class": "machine_trusted",
+      "priority": "blocking",
+      "rationale": "The repo includes a lockfile and should keep passing reproducible build checks."
+    },
+    {
+      "rule_id": "FE-AUTH-001",
+      "expected_status": "pass",
+      "expected_trust_class": "advisory",
+      "priority": "blocking",
+      "rationale": "Frontend-facing auth-guard related checks should keep detecting auth protection in the TypeScript app."
+    }
+  ]
+}

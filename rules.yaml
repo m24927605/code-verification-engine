@@ -1,0 +1,116 @@
+# Code Verification Engine — Rules File
+# version: DSL 版本，目前只支援 "0.1"
+# profile: 自訂名稱，用來描述這組規則的用途
+#
+# 每條規則包含：
+#   id:        穩定的規則 ID（例如 AUTH-001）
+#   title:     簡短標題
+#   category:  分類（security / architecture / quality / testing）
+#   severity:  嚴重程度（low / medium / high / critical）
+#   languages: 適用語言（go / javascript / typescript / python）
+#   type:      規則類型（見下方說明）
+#   target:    驗證目標（必須是引擎支援的 target，見下方清單）
+#   message:   人類可讀的說明
+#   where:     可選的過濾條件
+#
+# === 規則類型 ===
+#   exists        — 檢查某個能力或結構是否存在
+#   not_exists    — 檢查某個不良模式是否不存在
+#   relationship  — 檢查程式碼元素之間的關係
+#   test_required — 檢查關鍵模組是否有自動化測試
+#
+# === 支援的 target 清單 ===
+#   auth.jwt_middleware                  — JWT 認證 middleware
+#   auth.api_key_validation             — API key 驗證
+#   rate_limit.middleware               — 限流 middleware
+#   layer.repository                    — Repository 層存在
+#   db.direct_access_from_controller    — Controller 直接存取資料庫
+#   route.protected_uses_auth_middleware — 受保護路由綁定認證 middleware
+#   route.public_without_auth           — 未設防的公開路由
+#   module.payment_service              — Payment service 模組
+#   module.auth_service                 — Auth service 模組
+#   secret.hardcoded_credential         — 硬編碼的憑證
+#
+# === where 過濾條件（可選）===
+#   name_matches:  模糊匹配（token-aware，支援 camelCase/snake_case）
+#   name_exact:    精確匹配（不可與 name_matches 同時使用）
+#   path_matches:  路徑子字串匹配
+#   path_excludes: 路徑排除
+
+version: "0.1"
+profile: "backend-baseline"
+
+rules:
+  # ─── 安全性 ───
+
+  - id: "AUTH-001"
+    title: "JWT authentication must exist"
+    category: "security"
+    severity: "high"
+    languages: ["go", "javascript", "typescript", "python"]
+    type: "exists"
+    target: "auth.jwt_middleware"
+    message: "專案必須實作 JWT 認證 middleware。"
+
+  - id: "AUTH-002"
+    title: "Protected routes must use authentication middleware"
+    category: "security"
+    severity: "critical"
+    languages: ["go", "javascript", "typescript", "python"]
+    type: "relationship"
+    target: "route.protected_uses_auth_middleware"
+    message: "受保護的路由必須綁定認證 middleware。"
+
+  - id: "SEC-001"
+    title: "Hardcoded credentials must not exist"
+    category: "security"
+    severity: "critical"
+    languages: ["go", "javascript", "typescript", "python"]
+    type: "not_exists"
+    target: "secret.hardcoded_credential"
+    message: "程式碼中不得包含硬編碼的密碼或金鑰。"
+
+  # ─── 架構 ───
+
+  - id: "ARCH-001"
+    title: "Controllers must not access database directly"
+    category: "architecture"
+    severity: "high"
+    languages: ["go", "javascript", "typescript", "python"]
+    type: "not_exists"
+    target: "db.direct_access_from_controller"
+    message: "Controller 不應直接存取資料庫，應透過 service/repository 層。"
+
+  # ─── 測試 ───
+
+  - id: "TEST-001"
+    title: "Auth service must have tests"
+    category: "testing"
+    severity: "high"
+    languages: ["go", "javascript", "typescript", "python"]
+    type: "test_required"
+    target: "module.auth_service"
+    message: "認證服務必須有自動化測試。"
+
+  - id: "FEAT-001"
+    title: "Make Claude Code Skills"
+    category: "quality"
+    severity: "high"
+    languages: ["go", "javascript", "typescript", "python"]
+    type: "test_required"
+    target: "module.auth_service"
+    message: "認證服務必須有自動化測試。"
+
+  # ─── 使用 where 的範例（取消註解即可啟用）───
+  #
+  # - id: "TEST-002"
+  #   title: "Payment service must have tests"
+  #   category: "testing"
+  #   severity: "high"
+  #   languages: ["go", "javascript", "typescript", "python"]
+  #   type: "test_required"
+  #   target: "module.payment_service"
+  #   where:
+  #     name_matches: ["payment", "billing", "checkout"]
+  #     path_excludes: ["vendor/", "node_modules/"]
+  #   message: "Payment 相關服務必須有自動化測試。"

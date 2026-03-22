@@ -1,0 +1,116 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_id": "autocal-v1",
+  "mode": "frozen",
+  "description": "Frozen multi-profile dataset for autonomous calibration across backend, frontend, fullstack, and trusted-core checks.",
+  "generator_policy": {
+    "allow_llm_generated_repos": true,
+    "require_distinct_adjudicator": true,
+    "freeze_expected_after_promotion": true
+  },
+  "adjudication": {
+    "require_expected_diff": true,
+    "require_reviewer_verdict": true,
+    "require_second_reviewer_on": [
+      "machine_trusted",
+      "trusted-core",
+      "security/critical"
+    ]
+  },
+  "gate_policy": {
+    "block_on_frozen_regression": true,
+    "block_on_schema_contract_violation": true,
+    "require_trusted_core_clean": true,
+    "max_new_unknowns": 0,
+    "min_precision_by_trust_class": {
+      "machine_trusted": 0.98,
+      "advisory": 0.80,
+      "human_or_runtime_required": 0.95
+    },
+    "protected_paths": [
+      "testdata/autobench/datasets",
+      "internal/autobench"
+    ]
+  },
+  "suites": [
+    {
+      "id": "backend-go",
+      "profile": "backend-api",
+      "objective": "Exercise backend API rules on a clean Go service and a negative Go architecture fixture.",
+      "cases": [
+        {
+          "id": "go-secure-api-baseline",
+          "repo_path": "testdata/repos/go-secure-api",
+          "framework": "go-net-http",
+          "languages": ["go"],
+          "case_type": "mixed",
+          "target_rules": ["SEC-AUTH-001", "SEC-SECRET-003", "ARCH-LAYER-002"],
+          "expected_path": "testdata/autobench/datasets/autocal-v1/expected/go-secure-api-baseline.json",
+          "tags": ["backend", "go", "security", "architecture"]
+        },
+        {
+          "id": "go-bad-controller-db",
+          "repo_path": "testdata/repos/go-bad-controller-db",
+          "framework": "go-net-http",
+          "languages": ["go"],
+          "case_type": "fail",
+          "target_rules": ["ARCH-LAYER-001", "ARCH-PATTERN-001"],
+          "expected_path": "testdata/autobench/datasets/autocal-v1/expected/go-bad-controller-db.json",
+          "tags": ["backend", "go", "architecture", "negative"]
+        }
+      ]
+    },
+    {
+      "id": "backend-python",
+      "profile": "backend-api",
+      "objective": "Cover backend security rules on FastAPI-style Python services.",
+      "cases": [
+        {
+          "id": "python-fastapi-clean",
+          "repo_path": "testdata/repos/python-fastapi-clean",
+          "framework": "fastapi",
+          "languages": ["python"],
+          "case_type": "mixed",
+          "target_rules": ["SEC-AUTH-001", "ARCH-LAYER-002", "TEST-AUTH-001"],
+          "expected_path": "testdata/autobench/datasets/autocal-v1/expected/python-fastapi-clean.json",
+          "tags": ["backend", "python", "testing"]
+        }
+      ]
+    },
+    {
+      "id": "frontend-js",
+      "profile": "frontend",
+      "objective": "Cover frontend lockfile and auth-guard checks on JavaScript apps.",
+      "cases": [
+        {
+          "id": "js-node-no-auth-frontend",
+          "repo_path": "testdata/repos/js-node-no-auth",
+          "framework": "express",
+          "languages": ["javascript"],
+          "case_type": "mixed",
+          "target_rules": ["FE-DEP-001", "FE-AUTH-001", "FE-ERR-001"],
+          "expected_path": "testdata/autobench/datasets/autocal-v1/expected/js-node-no-auth-frontend.json",
+          "tags": ["frontend", "javascript", "negative"]
+        }
+      ]
+    },
+    {
+      "id": "fullstack-ts",
+      "profile": "fullstack",
+      "claim_set": "fullstack-security",
+      "objective": "Validate fullstack security claims on a TypeScript Express project.",
+      "cases": [
+        {
+          "id": "ts-express-auth-fullstack",
+          "repo_path": "testdata/repos/ts-express-auth",
+          "framework": "express",
+          "languages": ["typescript"],
+          "case_type": "mixed",
+          "target_rules": ["SEC-AUTH-001", "SEC-CORS-001", "FE-DEP-001", "FE-AUTH-001"],
+          "expected_path": "testdata/autobench/datasets/autocal-v1/expected/ts-express-auth-fullstack.json",
+          "tags": ["fullstack", "typescript", "claims"]
+        }
+      ]
+    }
+  ]
+}
