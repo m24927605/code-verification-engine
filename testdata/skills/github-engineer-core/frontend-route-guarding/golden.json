@@ -1,0 +1,12 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "frontend-route-guarding",
+  "required_signals": [
+    {
+      "skill_id": "frontend_auth.route_guarding",
+      "trust_class": "advisory"
+    }
+  ],
+  "summary": {},
+  "description": "Frontend route guard detected as advisory signal"
+}

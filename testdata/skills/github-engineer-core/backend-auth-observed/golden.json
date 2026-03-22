@@ -1,0 +1,23 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "backend-auth-observed",
+  "required_signals": [
+    {
+      "skill_id": "backend_auth.jwt_middleware",
+      "status": "observed",
+      "trust_class": "advisory",
+      "min_evidence_count": 1,
+      "allowed_confidence": ["medium", "high"]
+    }
+  ],
+  "forbidden_signals": [
+    {
+      "skill_id": "frontend_auth.route_guarding",
+      "status": "observed"
+    }
+  ],
+  "summary": {
+    "min_observed": 1
+  },
+  "description": "Backend repo with JWT middleware implementation evidence"
+}

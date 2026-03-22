@@ -1,0 +1,15 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "secret-hygiene-clean",
+  "required_signals": [
+    {
+      "skill_id": "backend_security.secret_hygiene",
+      "status": "observed",
+      "min_evidence_count": 1
+    }
+  ],
+  "summary": {
+    "min_observed": 1
+  },
+  "description": "Clean secret handling with env-based config"
+}

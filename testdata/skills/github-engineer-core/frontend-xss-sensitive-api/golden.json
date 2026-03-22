@@ -1,0 +1,13 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "frontend-xss-sensitive-api",
+  "required_signals": [
+    {
+      "skill_id": "frontend_security.xss_sensitive_api_usage",
+      "trust_class": "advisory",
+      "min_evidence_count": 1
+    }
+  ],
+  "summary": {},
+  "description": "Dangerous frontend API usage detected as risk exposure"
+}

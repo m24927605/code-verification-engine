@@ -1,0 +1,19 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "secret-hygiene-violation",
+  "required_signals": [
+    {
+      "skill_id": "backend_security.secret_hygiene"
+    }
+  ],
+  "forbidden_signals": [
+    {
+      "skill_id": "backend_security.secret_hygiene",
+      "status": "observed",
+      "trust_class": "machine_trusted",
+      "category": "hygiene"
+    }
+  ],
+  "summary": {},
+  "description": "Hardcoded secret must not produce positive machine_trusted hygiene signal"
+}

@@ -1,0 +1,14 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "middleware-binding-advisory",
+  "required_signals": [
+    {
+      "skill_id": "backend_routing.middleware_binding",
+      "allowed_confidence": ["low", "medium"]
+    }
+  ],
+  "summary": {
+    "min_inferred": 0
+  },
+  "description": "Route binding with middleware attachment but limited trust"
+}

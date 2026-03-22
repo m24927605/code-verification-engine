@@ -1,0 +1,12 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "graceful-shutdown-advisory",
+  "required_signals": [
+    {
+      "skill_id": "backend_runtime.graceful_shutdown",
+      "trust_class": "advisory"
+    }
+  ],
+  "summary": {},
+  "description": "Graceful shutdown detected as advisory signal"
+}

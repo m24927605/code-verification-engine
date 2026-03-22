@@ -1,0 +1,12 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "error-handling-advisory",
+  "required_signals": [
+    {
+      "skill_id": "backend_runtime.error_handling",
+      "trust_class": "advisory"
+    }
+  ],
+  "summary": {},
+  "description": "Error handling middleware detected as advisory signal"
+}

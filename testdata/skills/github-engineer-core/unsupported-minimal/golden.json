@@ -1,0 +1,19 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "unsupported-minimal",
+  "required_signals": [
+    {
+      "skill_id": "backend_auth.jwt_middleware",
+      "status": "unsupported",
+      "trust_class": "human_or_runtime_required"
+    },
+    {
+      "skill_id": "frontend_auth.route_guarding",
+      "status": "unsupported"
+    }
+  ],
+  "summary": {
+    "min_unsupported": 1
+  },
+  "description": "Minimal repo with none of the targeted patterns"
+}

@@ -1,0 +1,17 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "request-logging-advisory",
+  "required_signals": [
+    {
+      "skill_id": "observability.request_logging",
+      "status": "observed",
+      "trust_class": "advisory",
+      "min_evidence_count": 1,
+      "allowed_confidence": ["medium", "high"]
+    }
+  ],
+  "summary": {
+    "min_observed": 1
+  },
+  "description": "Request logging middleware detected as advisory signal"
+}

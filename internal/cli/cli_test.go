@@ -170,9 +170,65 @@ func TestVersionDefault(t *testing.T) {
 	}
 }
 
+func TestRunVerifyInvalidMode(t *testing.T) {
+	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--mode", "invalid"})
+	if code != ExitInvalidInput {
+		t.Errorf("verify with invalid mode should exit 1, got %d", code)
+	}
+}
+
+func TestRunVerifyValidModes(t *testing.T) {
+	for _, mode := range []string{"verification", "skill_inference", "both"} {
+		code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--mode", mode})
+		if code == ExitInvalidInput {
+			t.Errorf("verify with mode=%s should not exit with invalid input, got %d", mode, code)
+		}
+	}
+}
+
+func TestRunVerifyInvalidSkillProfile(t *testing.T) {
+	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--mode", "skill_inference", "--skill-profile", "nonexistent-profile"})
+	if code != ExitInvalidInput {
+		t.Errorf("verify with invalid skill profile should exit 1, got %d", code)
+	}
+}
+
+func TestRunListSkillProfiles(t *testing.T) {
+	code := Run([]string{"list-skill-profiles"})
+	if code != ExitSuccess {
+		t.Errorf("list-skill-profiles should exit 0, got %d", code)
+	}
+}
+
 func TestRunVerifyRefFlag(t *testing.T) {
 	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--ref", "v1.0.0"})
 	if code == ExitInvalidInput {
 		t.Errorf("verify with --ref should not exit with invalid input, got %d", code)
+	}
+}
+
+func TestRunVerifyInterpretOpenAIProvider(t *testing.T) {
+	os.Setenv("CVE_LLM_API_KEY", "test-openai-key")
+	os.Setenv("CVE_LLM_PROVIDER", "openai")
+	defer os.Unsetenv("CVE_LLM_API_KEY")
+	defer os.Unsetenv("CVE_LLM_PROVIDER")
+	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--interpret"})
+	if code == ExitInvalidInput {
+		t.Errorf("verify with --interpret and openai provider should not exit with invalid input, got %d", code)
+	}
+}
+
+func TestRunVerifyInterpretOpenAIProviderWithModelAndURL(t *testing.T) {
+	os.Setenv("CVE_LLM_API_KEY", "test-openai-key")
+	os.Setenv("CVE_LLM_PROVIDER", "openai")
+	os.Setenv("CVE_LLM_API_URL", "https://custom-openai.example.com/v1/chat/completions")
+	os.Setenv("CVE_LLM_MODEL", "gpt-4o")
+	defer os.Unsetenv("CVE_LLM_API_KEY")
+	defer os.Unsetenv("CVE_LLM_PROVIDER")
+	defer os.Unsetenv("CVE_LLM_API_URL")
+	defer os.Unsetenv("CVE_LLM_MODEL")
+	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--interpret"})
+	if code == ExitInvalidInput {
+		t.Errorf("verify with openai provider + custom model/url should not exit with invalid input, got %d", code)
 	}
 }

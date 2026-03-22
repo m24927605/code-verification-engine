@@ -13,6 +13,7 @@ import (
 	"github.com/verabase/code-verification-engine/internal/analyzers"
 	"github.com/verabase/code-verification-engine/internal/claims"
 	"github.com/verabase/code-verification-engine/internal/evidencegraph"
+	"github.com/verabase/code-verification-engine/internal/facts"
 	goanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/go"
 	jsanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/js"
 	pyanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/python"
@@ -23,6 +24,7 @@ import (
 	"github.com/verabase/code-verification-engine/internal/report"
 	"github.com/verabase/code-verification-engine/internal/rules"
 	"github.com/verabase/code-verification-engine/internal/schema"
+	"github.com/verabase/code-verification-engine/internal/skills"
 	"github.com/verabase/code-verification-engine/internal/typegraph"
 )
 
@@ -37,19 +39,21 @@ type PluginAnalyzer struct {
 
 // Config holds engine execution configuration.
 type Config struct {
-	Ctx         context.Context       // caller context for cancellation/timeout
-	RepoPath    string
-	Ref         string
-	Profile     string // built-in profile name
-	OutputDir   string
-	Format      string
-	Strict      bool
-	Progress    io.Writer             // stderr for progress messages
-	Interpret   bool                  // Enable LLM interpretation layer
-	LLMProvider interpret.LLMProvider // LLM provider (nil = skip interpretation)
-	ClaimSet    string                // optional claim set name (alternative/complement to Profile)
-	Hooks       *ScanHooks            // optional extension hooks
-	Plugins     []PluginAnalyzer      // optional external analyzer plugins
+	Ctx          context.Context       // caller context for cancellation/timeout
+	RepoPath     string
+	Ref          string
+	Profile      string // built-in profile name
+	OutputDir    string
+	Format       string
+	Strict       bool
+	Progress     io.Writer             // stderr for progress messages
+	Interpret    bool                  // Enable LLM interpretation layer
+	LLMProvider  interpret.LLMProvider // LLM provider (nil = skip interpretation)
+	ClaimSet     string                // optional claim set name (alternative/complement to Profile)
+	Hooks        *ScanHooks            // optional extension hooks
+	Plugins      []PluginAnalyzer      // optional external analyzer plugins
+	Mode         string                // execution mode: verification, skill_inference, both (default: verification)
+	SkillProfile string                // skill profile name (default: github-engineer-core)
 }
 
 // Result holds the engine execution result.
@@ -61,6 +65,7 @@ type Result struct {
 	ClaimReport       *claims.ClaimReport              // nil if no claim set specified
 	EvidenceGraph     *evidencegraph.EvidenceGraph    // evidence relationship graph
 	InterpretedReport *interpret.InterpretedReport    // nil if interpretation disabled
+	SkillReport       *skills.Report                   // nil if mode does not include skill_inference
 	Errors            []string
 }
 
@@ -79,6 +84,11 @@ func Run(cfg Config) Result {
 	progress := cfg.Progress
 	if progress == nil {
 		progress = os.Stderr
+	}
+
+	// 0. Validate mode early — before any pipeline work or file writes
+	if cfg.Mode != "" && !skills.ValidMode(cfg.Mode) {
+		return Result{ExitCode: 1, Errors: []string{fmt.Sprintf("invalid mode %q: allowed modes are verification, skill_inference, both", cfg.Mode)}}
 	}
 
 	// 1. Load profile
@@ -173,12 +183,17 @@ func Run(cfg Config) Result {
 	if err != nil {
 		return Result{ExitCode: 2, Errors: []string{fmt.Sprintf("workspace file enumeration: %v", err)}}
 	}
+	// CRITICAL: preserve scan boundary — filter to the same subtree as repo.Load
+	wsFiles = repo.FilterFilesToSubtree(wsFiles, meta.ScanSubdir)
 	wsFiles = repo.FilterSafePaths(ws.Path, wsFiles)
 	meta.Files = wsFiles
 	meta.FileCount = len(wsFiles)
 	meta.Languages = repo.DetectLanguages(wsFiles)
 
 	// 4. Detect languages
+	if meta.ScanSubdir != "" {
+		fmt.Fprintf(progress, "[INFO] scan boundary: %s (subdir of %s)\n", meta.ScanSubdir, meta.SourceRepoRoot)
+	}
 	fmt.Fprintf(progress, "[INFO] detected languages: %s\n", joinStrings(meta.Languages))
 
 	// Check cancellation before analysis
@@ -332,15 +347,29 @@ func Run(cfg Config) Result {
 	factSet := buildFactSet(allResults)
 	factSet.TypeGraph = mergeTypeGraphs(allResults)
 
+	// Add root-level config files (lockfiles, etc.) that analyzers skip because
+	// they don't match language extensions. These are needed for rules like FE-DEP-001.
+	addRootConfigFiles(ws.Path, meta.Files, factSet)
+
 	// 7. Execute rules
 	ruleEngine := rules.NewEngine()
+
+	// Degrade capability matrix for languages whose AST runtime is unavailable.
+	// This ensures the matrix reflects actual analyzer strength, not theoretical.
+	if !pyanalyzer.PythonASTAvailable() {
+		ruleEngine.DegradeLanguageCapability("python", "python3 unavailable")
+		fmt.Fprintf(progress, "[INFO] python3 not available — Python capability degraded to regex fallback\n")
+	}
+
 	execResult := ruleEngine.Execute(ruleFile, factSet, meta.Languages)
 
-	// Populate stable evidence IDs and fire finding hooks
+	// Populate stable evidence IDs, assign trust class, and fire finding hooks
 	for i := range execResult.Findings {
 		for j := range execResult.Findings[i].Evidence {
 			execResult.Findings[i].Evidence[j].ID = rules.EvidenceID(execResult.Findings[i].Evidence[j])
 		}
+		// Assign trust class and enforce trust boundary invariants
+		rules.NormalizeTrust(&execResult.Findings[i])
 		// Hook: OnFindingProduced
 		if cfg.Hooks != nil && cfg.Hooks.OnFindingProduced != nil {
 			cfg.Hooks.OnFindingProduced(execResult.Findings[i])
@@ -352,9 +381,13 @@ func Run(cfg Config) Result {
 	fmt.Fprintf(progress, "[INFO] evidence graph: %d nodes, %d edges, %d files\n",
 		evGraph.NodeCount(), evGraph.EdgeCount(), len(evGraph.UniqueFiles()))
 
-	fmt.Fprintf(progress, "[INFO] findings: pass=%d fail=%d unknown=%d\n",
+	sigSummary := report.ComputeSignalSummary(execResult.Findings)
+	fmt.Fprintf(progress, "[INFO] findings: pass=%d fail=%d (actionable=%d advisory=%d informational=%d) unknown=%d\n",
 		countStatus(execResult.Findings, rules.StatusPass),
 		countStatus(execResult.Findings, rules.StatusFail),
+		sigSummary.ActionableFail,
+		sigSummary.AdvisoryFail,
+		sigSummary.InformationalDetection,
 		countStatus(execResult.Findings, rules.StatusUnknown))
 
 	// Check cancellation before report generation
@@ -365,23 +398,32 @@ func Run(cfg Config) Result {
 	// 8. Generate reports
 	partial := hasErrors && hasSuccess
 	scanReport := report.GenerateScanReport(report.ScanInput{
-		RepoPath:  meta.RepoPath,
-		RepoName:  meta.RepoName,
-		Ref:       meta.Ref,
-		CommitSHA: meta.CommitSHA,
-		Languages: meta.Languages,
-		FileCount: meta.FileCount,
-		Partial:   partial,
-		Analyzers: analyzerStatuses,
-		Errors:    analyzerErrors,
-		Profile: cfg.Profile,
+		RepoPath:       meta.RepoPath,
+		RepoName:       meta.RepoName,
+		Ref:            meta.Ref,
+		CommitSHA:      meta.CommitSHA,
+		Languages:      meta.Languages,
+		FileCount:      meta.FileCount,
+		Partial:        partial,
+		Analyzers:      analyzerStatuses,
+		Errors:         analyzerErrors,
+		Profile:        cfg.Profile,
+		SourceRepoRoot: meta.SourceRepoRoot,
+		RequestedPath:  meta.RequestedPath,
+		ScanSubdir:     meta.ScanSubdir,
+		BoundaryMode:   meta.BoundaryMode,
 	})
+
+	// Track whether any analyzer runtime was degraded (e.g., python3 unavailable).
+	// This must be surfaced in the report so consumers know analysis quality.
+	analysisDegraded := !pyanalyzer.PythonASTAvailable() && containsLanguage(meta.Languages, "python")
 
 	verReport := report.GenerateVerificationReport(report.ReportInput{
 		Partial:      partial,
 		Findings:     execResult.Findings,
 		SkippedRules: execResult.SkippedRules,
 		Errors:       analyzerErrors,
+		Degraded:     analysisDegraded,
 	})
 
 	// Validate output contracts — fail closed on violations.
@@ -389,11 +431,15 @@ func Run(cfg Config) Result {
 	// that is a bug and must not be written as a "successful" result.
 	var contractErrors []string
 	if contractErrs := schema.ValidateReportContract(schema.ReportContractInput{
-		ReportSchemaVersion: verReport.ReportSchemaVersion,
-		Findings:            verReport.Findings,
-		SummaryPass:         verReport.Summary.Pass,
-		SummaryFail:         verReport.Summary.Fail,
-		SummaryUnknown:      verReport.Summary.Unknown,
+		ReportSchemaVersion:          verReport.ReportSchemaVersion,
+		Findings:                     verReport.Findings,
+		SummaryPass:                  verReport.Summary.Pass,
+		SummaryFail:                  verReport.Summary.Fail,
+		SummaryUnknown:               verReport.Summary.Unknown,
+		SignalActionableFail:         verReport.SignalSummary.ActionableFail,
+		SignalAdvisoryFail:           verReport.SignalSummary.AdvisoryFail,
+		SignalInformationalDetection: verReport.SignalSummary.InformationalDetection,
+		SignalUnknown:                verReport.SignalSummary.Unknown,
 	}); len(contractErrs) > 0 {
 		for _, e := range contractErrs {
 			contractErrors = append(contractErrors, fmt.Sprintf("report contract: %v", e))
@@ -469,6 +515,23 @@ func Run(cfg Config) Result {
 			fmt.Fprintf(progress, "[WARN] LLM interpreter init failed: %v\n", interpInitErr)
 		} else {
 			snippets := collectEvidenceSnippets(ws.Path, execResult.Findings)
+
+			// Step 1: Constrained LLM review for partial/unknown findings only.
+			// Machine-trusted rules remain deterministic. Advisory rules may get refined.
+			reviewReport, reviewErr := interp.Review(ctx, execResult.Findings, snippets, interpret.ReviewPolicyDefault)
+			if reviewErr != nil {
+				fmt.Fprintf(progress, "[WARN] LLM review failed: %v\n", reviewErr)
+			} else {
+				fmt.Fprintf(progress, "[INFO] LLM review: %d reviewed, %d skipped, %d errors\n",
+					reviewReport.ReviewCount, reviewReport.SkipCount, reviewReport.ErrorCount)
+				// Write review report
+				reviewPath := filepath.Join(cfg.OutputDir, "review.json")
+				if data, err := json.MarshalIndent(reviewReport, "", "  "); err == nil {
+					os.WriteFile(reviewPath, append(data, '\n'), 0o644)
+				}
+			}
+
+			// Step 2: Full interpretation (explanation, triage, suggested fix)
 			var interpErr error
 			interpretedReport, interpErr = interp.Interpret(ctx, execResult.Findings, snippets)
 			if interpErr != nil {
@@ -484,6 +547,45 @@ func Run(cfg Config) Result {
 		} else if err := os.WriteFile(interpPath, append(data, '\n'), 0o644); err != nil {
 			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write interpreted.json: %v", err)}}
 		}
+	}
+
+	// Skill inference pipeline (runs after verification if mode includes it)
+	mode := skills.Mode(cfg.Mode)
+	if cfg.Mode == "" {
+		mode = skills.DefaultMode()
+	}
+
+	var skillReport *skills.Report
+	if mode.IncludesSkillInference() {
+		skillProfileName := cfg.SkillProfile
+		if skillProfileName == "" {
+			skillProfileName = "github-engineer-core"
+		}
+		sp, spOK := skills.GetProfile(skillProfileName)
+		if !spOK {
+			return Result{ExitCode: 3, Errors: []string{fmt.Sprintf("unknown skill profile: %s", skillProfileName)}}
+		}
+
+		skillReport = skills.Evaluate(execResult.Findings, sp, cfg.RepoPath, skills.WithFactSet(factSet))
+
+		// Validate skill output contract — fail closed
+		if contractErrs := skills.ValidateReport(skillReport); len(contractErrs) > 0 {
+			var skillContractErrors []string
+			for _, e := range contractErrs {
+				skillContractErrors = append(skillContractErrors, fmt.Sprintf("skill contract: %v", e))
+			}
+			for _, e := range skillContractErrors {
+				fmt.Fprintf(progress, "[ERROR] %s\n", e)
+			}
+			return Result{ExitCode: 5, Errors: skillContractErrors}
+		}
+
+		// Write skills.json
+		if err := skills.WriteSkillsJSON(cfg.OutputDir, skillReport); err != nil {
+			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write skills.json: %v", err)}}
+		}
+		fmt.Fprintf(progress, "[INFO] skills: observed=%d inferred=%d unsupported=%d\n",
+			skillReport.Summary.Observed, skillReport.Summary.Inferred, skillReport.Summary.Unsupported)
 	}
 
 	exitCode := 0
@@ -504,6 +606,7 @@ func Run(cfg Config) Result {
 		ClaimReport:       claimReport,
 		EvidenceGraph:     evGraph,
 		InterpretedReport: interpretedReport,
+		SkillReport:       skillReport,
 		Errors:            analyzerErrors,
 	}
 }
@@ -537,6 +640,42 @@ func filterFiles(files []string, extensions []string) []string {
 		}
 	}
 	return result
+}
+
+// addRootConfigFiles adds well-known root-level configuration files to the FactSet
+// so that rules like FE-DEP-001 (lockfile detection) can find them even though
+// they aren't analyzed by language-specific analyzers.
+func addRootConfigFiles(wsPath string, trackedFiles []string, fs *rules.FactSet) {
+	configFiles := []string{
+		"package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+		".env", ".env.local", ".env.production", ".env.development",
+	}
+	configSet := make(map[string]bool)
+	for _, cf := range configFiles {
+		configSet[strings.ToLower(cf)] = true
+	}
+
+	// Check tracked files list for root-level config files
+	for _, f := range trackedFiles {
+		baseName := strings.ToLower(filepath.Base(f))
+		if configSet[baseName] {
+			// Check if already present in FileFacts
+			alreadyPresent := false
+			for _, ff := range fs.Files {
+				if ff.File == f {
+					alreadyPresent = true
+					break
+				}
+			}
+			if !alreadyPresent {
+				// Use a generic language — these are config files
+				lang := facts.LangJavaScript // lockfiles are JS ecosystem files
+				if fact, err := facts.NewFileFact(lang, f, 1); err == nil {
+					fs.Files = append(fs.Files, fact)
+				}
+			}
+		}
+	}
 }
 
 func buildFactSet(results []*analyzers.AnalysisResult) *rules.FactSet {
@@ -632,4 +771,13 @@ func collectEvidenceSnippets(scanDir string, findings []rules.Finding) map[strin
 		}
 	}
 	return snippets
+}
+
+func containsLanguage(languages []string, lang string) bool {
+	for _, l := range languages {
+		if l == lang {
+			return true
+		}
+	}
+	return false
 }

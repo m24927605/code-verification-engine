@@ -1183,6 +1183,267 @@ func TestRunWithClaimSetMergesRules(t *testing.T) {
 	}
 }
 
+func TestRunWithClaimSetMergesExtraRules(t *testing.T) {
+	// Use "frontend" profile + "backend-security" claim set.
+	// The backend-security claims reference SEC-* rules (SEC-AUTH-001, etc.)
+	// which are NOT in the frontend profile but DO exist in backend-api.
+	// The merge logic (lines 104-121) must find these rules in AllProfiles()
+	// and inject them into the profile for execution.
+	repoPath := createTestRepo(t, tsRouterFiles())
+	outDir := t.TempDir()
+
+	result := Run(Config{
+		RepoPath:  repoPath,
+		Profile:   "frontend",
+		ClaimSet:  "backend-security",
+		OutputDir: outDir,
+		Format:    "json",
+	})
+
+	assertSuccessExitCode(t, result)
+	if result.ClaimReport == nil {
+		t.Fatal("expected claim report with merged rules")
+	}
+	// backend-security has 8 claims; each should produce a verdict
+	if len(result.ClaimReport.Claims) == 0 {
+		t.Error("expected claims to be evaluated after rule merge")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Sidecar write failure tests
+// ---------------------------------------------------------------------------
+
+func TestRunSidecarWriteFailure_Accounting(t *testing.T) {
+	repoPath := createTestRepo(t, goRouterFiles())
+	outDir := t.TempDir()
+	// Pre-create accounting.json as a directory so os.WriteFile fails
+	if err := os.Mkdir(filepath.Join(outDir, "accounting.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Run(Config{
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		OutputDir: outDir,
+		Format:    "json",
+	})
+
+	if result.ExitCode != 5 {
+		t.Errorf("expected exit code 5 for accounting write failure, got %d; errors: %v", result.ExitCode, result.Errors)
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "accounting") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected accounting error in result.Errors, got %v", result.Errors)
+	}
+}
+
+func TestRunSidecarWriteFailure_EvidenceGraph(t *testing.T) {
+	repoPath := createTestRepo(t, goRouterFiles())
+	outDir := t.TempDir()
+	// Pre-create evidence-graph.json as a directory
+	if err := os.Mkdir(filepath.Join(outDir, "evidence-graph.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Run(Config{
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		OutputDir: outDir,
+		Format:    "json",
+	})
+
+	if result.ExitCode != 5 {
+		t.Errorf("expected exit code 5 for evidence-graph write failure, got %d; errors: %v", result.ExitCode, result.Errors)
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "evidence") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected evidence-graph error in result.Errors, got %v", result.Errors)
+	}
+}
+
+func TestRunSidecarWriteFailure_Claims(t *testing.T) {
+	repoPath := createTestRepo(t, goRouterFiles())
+	outDir := t.TempDir()
+	// Pre-create claims.json as a directory
+	if err := os.Mkdir(filepath.Join(outDir, "claims.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Run(Config{
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		ClaimSet:  "backend-security",
+		OutputDir: outDir,
+		Format:    "json",
+	})
+
+	if result.ExitCode != 5 {
+		t.Errorf("expected exit code 5 for claims write failure, got %d; errors: %v", result.ExitCode, result.Errors)
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "claims") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected claims error in result.Errors, got %v", result.Errors)
+	}
+}
+
+func TestRunSidecarWriteFailure_Interpreted(t *testing.T) {
+	repoPath := createTestRepo(t, goRouterFiles())
+	outDir := t.TempDir()
+	// Pre-create interpreted.json as a directory
+	if err := os.Mkdir(filepath.Join(outDir, "interpreted.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Run(Config{
+		RepoPath:    repoPath,
+		Profile:     "backend-api",
+		OutputDir:   outDir,
+		Format:      "json",
+		Interpret:   true,
+		LLMProvider: &interpret.StubProvider{},
+	})
+
+	if result.ExitCode != 5 {
+		t.Errorf("expected exit code 5 for interpreted write failure, got %d; errors: %v", result.ExitCode, result.Errors)
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "interpreted") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected interpreted error in result.Errors, got %v", result.Errors)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Context cancellation at specific pipeline stages
+// ---------------------------------------------------------------------------
+
+func TestRunCancelInAnalyzerCompleteHook(t *testing.T) {
+	// Cancel context in OnAnalyzerComplete hook.
+	// After wg.Wait(), the post-analysis ctx.Err() check (line 327) should catch it.
+	repoPath := createTestRepo(t, goRouterFiles())
+	outDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result := Run(Config{
+		Ctx:       ctx,
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		OutputDir: outDir,
+		Format:    "json",
+		Hooks: &ScanHooks{
+			OnAnalyzerComplete: func(language string, fileCount int, skippedCount int) {
+				cancel()
+			},
+		},
+	})
+
+	if result.ExitCode != 7 {
+		t.Errorf("expected exit code 7 (cancelled after analysis), got %d; errors: %v", result.ExitCode, result.Errors)
+	}
+}
+
+func TestRunContractViolationFromInvalidEvidence(t *testing.T) {
+	// A plugin returning SecretFacts with Span.Start=0 causes the not_exists
+	// matcher (SEC-SECRET-001) to produce evidence with LineStart=0.
+	// The report contract validation catches this (LineStart must be >= 1)
+	// and returns exit code 5.
+	files := []repoFile{
+		{path: "main.go", content: "package main\n\nfunc main() {}\n"},
+	}
+	repoPath := createTestRepo(t, files)
+	outDir := t.TempDir()
+
+	result := Run(Config{
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		OutputDir: outDir,
+		Format:    "json",
+		Plugins: []PluginAnalyzer{
+			{
+				PluginName: "bad-evidence-plugin",
+				Langs:      []string{"go"},
+				Exts:       []string{".go"},
+				AnalyzeFn: func(ctx context.Context, dir string, files []string) ([]byte, error) {
+					// Return a secret with Span.Start=0 (invalid)
+					result := map[string]interface{}{
+						"files":   []interface{}{},
+						"symbols": []interface{}{},
+						"secrets": []interface{}{
+							map[string]interface{}{
+								"file":     "main.go",
+								"language": "go",
+								"kind":     "api_key",
+								"span":     map[string]interface{}{"start": 0, "end": 0},
+							},
+						},
+					}
+					return json.Marshal(result)
+				},
+			},
+		},
+	})
+
+	if result.ExitCode != 5 {
+		t.Errorf("expected exit code 5 for contract violation, got %d; errors: %v", result.ExitCode, result.Errors)
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "contract") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected contract violation error, got %v", result.Errors)
+	}
+}
+
+func TestRunCancelInFindingProducedHook(t *testing.T) {
+	// Cancel context in OnFindingProduced hook.
+	// The post-rule-execution ctx.Err() check (line 363) should catch it.
+	repoPath := createTestRepo(t, goRouterFiles())
+	outDir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result := Run(Config{
+		Ctx:       ctx,
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		OutputDir: outDir,
+		Format:    "json",
+		Hooks: &ScanHooks{
+			OnFindingProduced: func(finding interface{}) {
+				cancel()
+			},
+		},
+	})
+
+	if result.ExitCode != 7 {
+		t.Errorf("expected exit code 7 (cancelled after findings), got %d; errors: %v", result.ExitCode, result.Errors)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // JS-only repo test
 // ---------------------------------------------------------------------------

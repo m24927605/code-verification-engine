@@ -9,6 +9,7 @@ import (
 	"github.com/verabase/code-verification-engine/internal/engine"
 	"github.com/verabase/code-verification-engine/internal/interpret"
 	"github.com/verabase/code-verification-engine/internal/rules"
+	"github.com/verabase/code-verification-engine/internal/skills"
 )
 
 // Version is set via build flags.
@@ -40,6 +41,8 @@ func Run(args []string) int {
 		return runListProfiles()
 	case "list-claims":
 		return runListClaims()
+	case "list-skill-profiles":
+		return runListSkillProfiles()
 	case "version":
 		fmt.Printf("cve version %s\n", Version)
 		return ExitSuccess
@@ -60,6 +63,8 @@ func runVerify(args []string) int {
 	strict := fs.Bool("strict", false, "Fail on any analyzer error")
 	claimSetName := fs.String("claims", "", "Claim set name for claim-centric verification (e.g., backend-security)")
 	interpretFlag := fs.Bool("interpret", false, "Enable LLM interpretation layer (requires LLM provider)")
+	modeFlag := fs.String("mode", "verification", "Engine mode: verification, skill_inference, both")
+	skillProfileFlag := fs.String("skill-profile", "github-engineer-core", "Skill inference profile name")
 
 	if err := fs.Parse(args); err != nil {
 		return ExitInvalidInput
@@ -95,6 +100,24 @@ func runVerify(args []string) int {
 		return ExitInvalidInput
 	}
 
+	if !skills.ValidMode(*modeFlag) {
+		fmt.Fprintf(os.Stderr, "[ERROR] --mode must be one of: verification, skill_inference, both\n")
+		return ExitInvalidInput
+	}
+
+	mode := skills.Mode(*modeFlag)
+	if mode.IncludesSkillInference() {
+		if !skills.ValidateProfileName(*skillProfileFlag) {
+			fmt.Fprintf(os.Stderr, "[ERROR] unknown skill profile: %s\n", *skillProfileFlag)
+			fmt.Fprintf(os.Stderr, "\nAvailable skill profiles:\n")
+			for _, name := range skills.ListProfileNames() {
+				p, _ := skills.GetProfile(name)
+				fmt.Fprintf(os.Stderr, "  %-30s %s (%d signals)\n", name, p.Description, len(p.Signals))
+			}
+			return ExitInvalidInput
+		}
+	}
+
 	// Resolve LLM provider for interpretation
 	var llmProvider interpret.LLMProvider
 	if *interpretFlag {
@@ -103,25 +126,41 @@ func runVerify(args []string) int {
 			fmt.Fprintf(os.Stderr, "[WARN] --interpret: CVE_LLM_API_KEY not set, skipping LLM interpretation\n")
 			// Don't set llmProvider — interpretation will be skipped entirely
 		} else {
-			apiURL := os.Getenv("CVE_LLM_API_URL")
-			if apiURL == "" {
-				apiURL = "https://api.anthropic.com/v1/messages"
+			provider := os.Getenv("CVE_LLM_PROVIDER") // "anthropic" (default) or "openai"
+			switch provider {
+			case "openai":
+				apiURL := os.Getenv("CVE_LLM_API_URL")
+				if apiURL == "" {
+					apiURL = "https://api.openai.com/v1/chat/completions"
+				}
+				model := os.Getenv("CVE_LLM_MODEL")
+				rawProvider := interpret.NewOpenAIProvider(apiKey, apiURL, model)
+				llmProvider = interpret.NewSafeProvider(rawProvider, interpret.DefaultProviderConfig())
+			default:
+				// Anthropic (default)
+				apiURL := os.Getenv("CVE_LLM_API_URL")
+				if apiURL == "" {
+					apiURL = "https://api.anthropic.com/v1/messages"
+				}
+				rawProvider := interpret.NewHTTPProvider(apiKey, apiURL)
+				llmProvider = interpret.NewSafeProvider(rawProvider, interpret.DefaultProviderConfig())
 			}
-			llmProvider = interpret.NewHTTPProvider(apiKey, apiURL)
 		}
 	}
 
 	cfg := engine.Config{
-		RepoPath:    *repoPath,
-		Ref:         *ref,
-		Profile:     *profile,
-		ClaimSet:    *claimSetName,
-		OutputDir:   *outputDir,
-		Format:      *format,
-		Strict:      *strict,
-		Interpret:   *interpretFlag,
-		LLMProvider: llmProvider,
-		Progress:    os.Stderr,
+		RepoPath:     *repoPath,
+		Ref:          *ref,
+		Profile:      *profile,
+		ClaimSet:     *claimSetName,
+		OutputDir:    *outputDir,
+		Format:       *format,
+		Strict:       *strict,
+		Interpret:    *interpretFlag,
+		LLMProvider:  llmProvider,
+		Progress:     os.Stderr,
+		Mode:         *modeFlag,
+		SkillProfile: *skillProfileFlag,
 	}
 
 	result := engine.Run(cfg)
@@ -162,14 +201,30 @@ func runListClaims() int {
 	return ExitSuccess
 }
 
+func runListSkillProfiles() int {
+	profiles := skills.AllProfiles()
+	fmt.Println("Available skill inference profiles:")
+	for _, p := range profiles {
+		fmt.Printf("\n  %s\n", p.Name)
+		fmt.Printf("    %s\n", p.Description)
+		fmt.Printf("    %d signals\n\n", len(p.Signals))
+		for _, s := range p.Signals {
+			fmt.Printf("    [%s] %s (%s)\n", s.SkillID, s.Message, s.Category)
+		}
+	}
+	fmt.Println()
+	return ExitSuccess
+}
+
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: cve <command> [flags]
 
 Commands:
-  verify          Run the full verification pipeline
-  list-profiles   List available built-in verification profiles
-  list-claims     List available claim sets for claim-centric verification
-  version         Print version and build metadata
+  verify               Run the full verification pipeline
+  list-profiles        List available built-in verification profiles
+  list-claims          List available claim sets for claim-centric verification
+  list-skill-profiles  List available skill inference profiles
+  version              Print version and build metadata
 
 Run 'cve <command> -help' for command-specific flags.
 
@@ -177,5 +232,7 @@ Example:
   cve verify --repo ~/my-api --output ./out
   cve verify --repo ~/my-api --profile backend-api-strict --output ./out
   cve verify --repo ~/my-api --claims backend-security --output ./out
+  cve verify --repo ~/my-api --mode skill_inference --output ./out
+  cve verify --repo ~/my-api --mode both --skill-profile github-engineer-core --output ./out
 `)
 }

@@ -1,0 +1,13 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "db-layering-structural",
+  "required_signals": [
+    {
+      "skill_id": "backend_architecture.db_layering",
+      "trust_class": "advisory",
+      "min_evidence_count": 1
+    }
+  ],
+  "summary": {},
+  "description": "Structural layering evidence for DB access patterns"
+}

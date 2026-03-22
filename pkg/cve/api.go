@@ -15,13 +15,15 @@ var Version = "dev"
 
 // VerifyInput defines the input for a verification run.
 type VerifyInput struct {
-	RepoPath string // Local git repository path (required)
-	Ref      string // Git ref (branch, tag, SHA). Default: "HEAD"
-	Profile  string // Verification profile. Default: "backend-api"
-	ClaimSet string // Optional claim set for claim-centric output
-	Format   string // Output format: "json", "md", "both". Default: "both"
-	Strict   bool   // Fail on any analyzer error
-	OutputDir string // Output directory (required)
+	RepoPath     string // Local git repository path (required)
+	Ref          string // Git ref (branch, tag, SHA). Default: "HEAD"
+	Profile      string // Verification profile. Default: "backend-api"
+	ClaimSet     string // Optional claim set for claim-centric output
+	Format       string // Output format: "json", "md", "both". Default: "both"
+	Strict       bool   // Fail on any analyzer error
+	OutputDir    string // Output directory (required)
+	Mode         string // Engine mode: "verification", "skill_inference", "both". Default: "verification"
+	SkillProfile string // Skill inference profile. Default: "github-engineer-core"
 }
 
 // VerifyOutput is the complete verification result.
@@ -29,9 +31,13 @@ type VerifyOutput struct {
 	ExitCode int    `json:"exit_code"`
 	Success  bool   `json:"success"`
 
-	// Structured outputs — stable contracts
-	Scan   interface{} `json:"scan"`   // scan.json content
-	Report interface{} `json:"report"` // report.json content
+	// Typed structured outputs — stable contracts with enforced trust boundaries.
+	// Consumers MUST use these typed fields to access findings and inspect TrustClass.
+	Scan   ScanOutput   `json:"scan"`   // scan.json content
+	Report ReportOutput `json:"report"` // report.json content
+
+	// Skills is populated when mode includes skill_inference. Zero-value when verification-only.
+	Skills SkillOutput `json:"skills,omitempty"`
 
 	Errors []string `json:"errors,omitempty"`
 }
@@ -42,6 +48,15 @@ type Engine interface {
 	ListProfiles() []ProfileInfo
 	ListClaimSets() []ClaimSetInfo
 	ValidateProfile(name string) bool
+	ListSkillProfiles() []SkillProfileInfo
+	ValidateSkillProfile(name string) bool
+}
+
+// SkillProfileInfo describes an available skill inference profile.
+type SkillProfileInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SignalCount int    `json:"signal_count"`
 }
 
 // ProfileInfo describes an available profile.

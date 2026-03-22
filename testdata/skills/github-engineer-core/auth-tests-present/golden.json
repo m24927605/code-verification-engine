@@ -1,0 +1,11 @@
+{
+  "profile": "github-engineer-core",
+  "scenario": "auth-tests-present",
+  "required_signals": [
+    {
+      "skill_id": "testing.auth_module_tests"
+    }
+  ],
+  "summary": {},
+  "description": "Auth-related test files detected"
+}

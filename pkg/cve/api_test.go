@@ -2,6 +2,7 @@ package cve
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -444,6 +445,280 @@ func (m *mockLLMProvider) Complete(_ context.Context, _ string) (string, error) 
 	return m.response, m.err
 }
 
+// --- Trust boundary tests for typed public API ---
+
+func TestVerifyOutputTypedJSONSerialization(t *testing.T) {
+	out := &VerifyOutput{
+		ExitCode: 0,
+		Success:  true,
+		Scan: ScanOutput{
+			ScanSchemaVersion: ScanSchemaVersion,
+			RepoPath:          "/tmp/repo",
+			RepoName:          "test-repo",
+			Ref:               "main",
+			Languages:         []string{"go"},
+			Analyzers:         map[string]string{"go": "ok"},
+			Profile:           "backend-api",
+		},
+		Report: ReportOutput{
+			ReportSchemaVersion: ReportSchemaVersion,
+			Summary:             ReportSummaryOutput{Pass: 2, Fail: 1},
+			TrustSummary: TrustSummary{
+				MachineTrusted:         1,
+				Advisory:               1,
+				HumanOrRuntimeRequired: 1,
+			},
+			Findings: []FindingOutput{
+				{RuleID: "SEC-SECRET-001", Status: "pass", TrustClass: "machine_trusted"},
+				{RuleID: "SEC-AUTH-001", Status: "pass", TrustClass: "advisory"},
+				{RuleID: "SEC-AUTH-002", Status: "fail", TrustClass: "human_or_runtime_required"},
+			},
+		},
+	}
+
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("failed to marshal VerifyOutput: %v", err)
+	}
+
+	s := string(data)
+	for _, tc := range []string{"machine_trusted", "advisory", "human_or_runtime_required"} {
+		if !strings.Contains(s, tc) {
+			t.Errorf("serialized output missing trust_class %q", tc)
+		}
+	}
+	if !strings.Contains(s, "trust_summary") {
+		t.Error("serialized output missing trust_summary")
+	}
+
+	var roundTrip VerifyOutput
+	if err := json.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if roundTrip.Report.TrustSummary.MachineTrusted != 1 {
+		t.Errorf("expected machine_trusted=1, got %d", roundTrip.Report.TrustSummary.MachineTrusted)
+	}
+	if roundTrip.Report.TrustSummary.Advisory != 1 {
+		t.Errorf("expected advisory=1, got %d", roundTrip.Report.TrustSummary.Advisory)
+	}
+	for _, f := range roundTrip.Report.Findings {
+		if f.TrustClass == "" {
+			t.Errorf("finding %s missing trust_class after round-trip", f.RuleID)
+		}
+	}
+}
+
+func TestFindingOutputRequiresTrustClass(t *testing.T) {
+	f := FindingOutput{
+		RuleID:     "TEST-001",
+		Status:     "pass",
+		TrustClass: "",
+	}
+	data, _ := json.Marshal(f)
+	if !strings.Contains(string(data), `"trust_class":""`) {
+		t.Error("empty trust_class should be serialized explicitly")
+	}
+}
+
+func TestReportOutputJSONCompat(t *testing.T) {
+	r := ReportOutput{
+		ReportSchemaVersion: "1.0.0",
+		Summary:             ReportSummaryOutput{Pass: 1},
+		TrustSummary:        TrustSummary{MachineTrusted: 1},
+		Findings: []FindingOutput{
+			{RuleID: "R-001", Status: "pass", TrustClass: "machine_trusted"},
+		},
+	}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"report_schema_version", "summary", "trust_summary", "signal_summary", "findings", "trust_class"} {
+		if !strings.Contains(string(data), field) {
+			t.Errorf("ReportOutput JSON missing field %q", field)
+		}
+	}
+}
+
+func TestSignalSummaryOutput_JSONSerialization(t *testing.T) {
+	out := &VerifyOutput{
+		Report: ReportOutput{
+			SignalSummary: SignalSummaryOutput{
+				ActionableFail:         7,
+				AdvisoryFail:           6,
+				InformationalDetection: 19,
+				Unknown:                0,
+			},
+		},
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	for _, field := range []string{"actionable_fail", "advisory_fail", "informational_detection"} {
+		if !strings.Contains(s, field) {
+			t.Errorf("SignalSummaryOutput JSON missing field %q", field)
+		}
+	}
+	if !strings.Contains(s, `"actionable_fail":7`) {
+		t.Error("expected actionable_fail=7 in JSON")
+	}
+}
+
+func TestTrustSummaryRoundTrip(t *testing.T) {
+	ts := TrustSummary{MachineTrusted: 3, Advisory: 5, HumanOrRuntimeRequired: 2}
+	data, _ := json.Marshal(ts)
+	var rt TrustSummary
+	json.Unmarshal(data, &rt)
+	if rt.MachineTrusted != 3 || rt.Advisory != 5 || rt.HumanOrRuntimeRequired != 2 {
+		t.Errorf("TrustSummary round-trip failed: %+v", rt)
+	}
+}
+
+// --- TrustGuidance tests ---
+
+func TestTrustGuidance_AllMachineTrustedVerified(t *testing.T) {
+	findings := []FindingOutput{
+		{RuleID: "R-1", Status: "pass", TrustClass: "machine_trusted", VerificationLevel: "verified"},
+		{RuleID: "R-2", Status: "pass", TrustClass: "machine_trusted", VerificationLevel: "verified"},
+	}
+	ts := TrustSummary{MachineTrusted: 2}
+	cs := CapabilitySummaryOutput{}
+	g := computeTrustGuidance(findings, ts, cs)
+
+	if !g.CanAutomate {
+		t.Error("should be automatable when all findings are machine_trusted+verified")
+	}
+	if g.RequiresReview {
+		t.Error("should not require review when all findings are machine_trusted")
+	}
+	if g.DegradedAnalysis {
+		t.Error("should not be degraded")
+	}
+}
+
+func TestTrustGuidance_MixedTrustClasses(t *testing.T) {
+	findings := []FindingOutput{
+		{RuleID: "R-1", Status: "pass", TrustClass: "machine_trusted", VerificationLevel: "verified"},
+		{RuleID: "R-2", Status: "pass", TrustClass: "advisory", VerificationLevel: "strong_inference"},
+	}
+	ts := TrustSummary{MachineTrusted: 1, Advisory: 1}
+	cs := CapabilitySummaryOutput{}
+	g := computeTrustGuidance(findings, ts, cs)
+
+	if g.CanAutomate {
+		t.Error("should NOT be automatable when advisory findings present")
+	}
+	if !g.RequiresReview {
+		t.Error("should require review when advisory findings present")
+	}
+}
+
+func TestTrustGuidance_DegradedAnalysis(t *testing.T) {
+	findings := []FindingOutput{
+		{RuleID: "R-1", Status: "pass", TrustClass: "machine_trusted", VerificationLevel: "verified"},
+	}
+	ts := TrustSummary{MachineTrusted: 1}
+	cs := CapabilitySummaryOutput{Degraded: true}
+	g := computeTrustGuidance(findings, ts, cs)
+
+	if !g.DegradedAnalysis {
+		t.Error("should be degraded when capability summary says so")
+	}
+	if !g.RequiresReview {
+		t.Error("degraded analysis should require review")
+	}
+	if g.CanAutomate {
+		t.Error("degraded analysis should not be automatable")
+	}
+}
+
+func TestTrustGuidance_NoFindings(t *testing.T) {
+	g := computeTrustGuidance(nil, TrustSummary{}, CapabilitySummaryOutput{})
+	if g.CanAutomate {
+		t.Error("no findings should not be automatable")
+	}
+	if g.Summary != "No findings to evaluate." {
+		t.Errorf("unexpected summary: %s", g.Summary)
+	}
+}
+
+func TestTrustGuidance_HumanRequired(t *testing.T) {
+	findings := []FindingOutput{
+		{RuleID: "R-1", Status: "pass", TrustClass: "human_or_runtime_required", VerificationLevel: "strong_inference"},
+	}
+	ts := TrustSummary{HumanOrRuntimeRequired: 1}
+	cs := CapabilitySummaryOutput{}
+	g := computeTrustGuidance(findings, ts, cs)
+
+	if g.CanAutomate {
+		t.Error("should not be automatable with human_required findings")
+	}
+	if !g.RequiresReview {
+		t.Error("should require review with human_required findings")
+	}
+}
+
+func TestTrustGuidance_JSONSerialization(t *testing.T) {
+	out := &VerifyOutput{
+		Report: ReportOutput{
+			TrustGuidance: TrustGuidance{
+				CanAutomate:      true,
+				RequiresReview:   false,
+				DegradedAnalysis: false,
+				Summary:          "All findings are machine-trusted and verified. Safe for automated consumption.",
+			},
+		},
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"trust_guidance"`) {
+		t.Error("JSON should contain trust_guidance")
+	}
+	if !strings.Contains(s, `"can_automate":true`) {
+		t.Error("JSON should contain can_automate field")
+	}
+	if !strings.Contains(s, `"requires_review":false`) {
+		t.Error("JSON should contain requires_review field")
+	}
+
+	var rt VerifyOutput
+	if err := json.Unmarshal(data, &rt); err != nil {
+		t.Fatal(err)
+	}
+	if !rt.Report.TrustGuidance.CanAutomate {
+		t.Error("round-trip should preserve can_automate=true")
+	}
+}
+
+func TestCapabilitySummaryOutput_JSONSerialization(t *testing.T) {
+	out := &VerifyOutput{
+		Report: ReportOutput{
+			CapabilitySummary: CapabilitySummaryOutput{
+				FullySupported: 5,
+				Partial:        3,
+				Unsupported:    1,
+				Degraded:       true,
+			},
+		},
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.Contains(s, `"capability_summary"`) {
+		t.Error("JSON should contain capability_summary")
+	}
+	if !strings.Contains(s, `"fully_supported":5`) {
+		t.Error("JSON should contain fully_supported count")
+	}
+}
+
 func TestWithAnalyzerPluginError(t *testing.T) {
 	repoDir := t.TempDir()
 	gitRun(t, repoDir, "init")
@@ -478,5 +753,80 @@ func TestWithAnalyzerPluginError(t *testing.T) {
 	// Plugin error in non-strict mode should produce partial result
 	if out.ExitCode != 0 && out.ExitCode != 6 {
 		t.Errorf("expected exit 0 or 6, got %d", out.ExitCode)
+	}
+}
+
+func TestVerify_InvalidMode_ReturnsError(t *testing.T) {
+	e := NewEngine()
+	_, err := e.Verify(context.Background(), VerifyInput{
+		RepoPath:  "/tmp",
+		OutputDir: t.TempDir(),
+		Mode:      "invalid",
+	})
+	if err == nil {
+		t.Error("expected error for invalid mode")
+	}
+	if !strings.Contains(err.Error(), "invalid mode") {
+		t.Errorf("error should mention invalid mode, got: %v", err)
+	}
+}
+
+func TestVerify_InvalidSkillProfile_ReturnsError(t *testing.T) {
+	e := NewEngine()
+	_, err := e.Verify(context.Background(), VerifyInput{
+		RepoPath:     "/tmp",
+		OutputDir:    t.TempDir(),
+		Mode:         "skill_inference",
+		SkillProfile: "nonexistent-profile",
+	})
+	if err == nil {
+		t.Error("expected error for invalid skill profile")
+	}
+	if !strings.Contains(err.Error(), "unknown skill profile") {
+		t.Errorf("error should mention unknown skill profile, got: %v", err)
+	}
+}
+
+func TestListSkillProfiles(t *testing.T) {
+	e := NewEngine()
+	profiles := e.ListSkillProfiles()
+	if len(profiles) == 0 {
+		t.Error("should have at least one skill profile")
+	}
+	found := false
+	for _, p := range profiles {
+		if p.Name == "github-engineer-core" {
+			found = true
+			if p.SignalCount == 0 {
+				t.Error("github-engineer-core should have signals")
+			}
+		}
+	}
+	if !found {
+		t.Error("missing github-engineer-core profile")
+	}
+}
+
+func TestValidateSkillProfile(t *testing.T) {
+	e := NewEngine()
+	if !e.ValidateSkillProfile("github-engineer-core") {
+		t.Error("github-engineer-core should be valid")
+	}
+	if e.ValidateSkillProfile("nonexistent") {
+		t.Error("nonexistent should be invalid")
+	}
+}
+
+func TestVerify_DefaultMode_BackwardCompatible(t *testing.T) {
+	e := NewEngine()
+	// Mode="" should behave as verification (backward compatible)
+	_, err := e.Verify(context.Background(), VerifyInput{
+		RepoPath:  "/tmp",
+		OutputDir: t.TempDir(),
+		// Mode intentionally empty
+	})
+	// Should not fail with mode error — it proceeds to engine which fails on repo
+	if err != nil && strings.Contains(err.Error(), "mode") {
+		t.Errorf("empty mode should default to verification, not error: %v", err)
 	}
 }
