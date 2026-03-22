@@ -4,7 +4,9 @@
 
 # Test coverage
 *.out
+*.cover
 coverage.html
+engine_coverage.html
 
 # IDE
 .idea/
@@ -19,6 +21,9 @@ Thumbs.db
 
 # Scan output (generated at runtime)
 /out/
+
+# Claude Code
+.claude/
 
 # Temporary workspaces
 /tmp/
