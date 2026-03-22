@@ -51,5 +51,17 @@ func ValidateVerificationLevel(f rules.Finding) error {
 		}
 	}
 
+	// Trust boundary invariants:
+	// Only machine_trusted findings may use verified level.
+	// Advisory and human_or_runtime_required must not.
+	if f.TrustClass != "" && f.VerificationLevel == rules.VerificationVerified {
+		if f.TrustClass == rules.TrustAdvisory {
+			return fmt.Errorf("rule %s: advisory trust class cannot have verified level", f.RuleID)
+		}
+		if f.TrustClass == rules.TrustHumanOrRuntimeRequired {
+			return fmt.Errorf("rule %s: human_or_runtime_required trust class cannot have verified level", f.RuleID)
+		}
+	}
+
 	return nil
 }

@@ -234,6 +234,7 @@ func TestValidateReportFindingValid(t *testing.T) {
 		Status:            rules.StatusPass,
 		Confidence:        rules.ConfidenceHigh,
 		VerificationLevel: rules.VerificationVerified,
+		TrustClass:        rules.TrustMachineTrusted,
 		Evidence: []rules.Evidence{
 			{File: "auth.go", LineStart: 1, LineEnd: 10, Symbol: "Verify"},
 		},
@@ -591,5 +592,197 @@ func TestValidateDependencyFactInvalidSpan(t *testing.T) {
 	df := facts.DependencyFact{Language: facts.LangGo, File: "go.mod", Span: facts.Span{Start: 0, End: 1}, Name: "gin"}
 	if err := schema.ValidateDependencyFact(df); err == nil {
 		t.Fatal("expected error for invalid span")
+	}
+}
+
+// --- CallFact validation ---
+
+func TestValidateCallFactValid(t *testing.T) {
+	cf, _ := facts.NewCallFact(facts.LangGo, "service.go", facts.Span{Start: 1, End: 5}, "caller", "", "callee", "")
+	if err := schema.ValidateCallFact(cf); err != nil {
+		t.Fatalf("expected valid, got: %v", err)
+	}
+}
+
+func TestValidateCallFactInvalidLanguage(t *testing.T) {
+	cf := facts.CallFact{Language: "rust", File: "main.rs", Span: facts.Span{Start: 1, End: 5}, CallerName: "c", CalleeName: "d"}
+	if err := schema.ValidateCallFact(cf); err == nil {
+		t.Fatal("expected error for invalid language")
+	}
+}
+
+func TestValidateCallFactMissingFile(t *testing.T) {
+	cf := facts.CallFact{Language: facts.LangGo, File: "", Span: facts.Span{Start: 1, End: 5}, CallerName: "c", CalleeName: "d"}
+	if err := schema.ValidateCallFact(cf); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestValidateCallFactInvalidSpan(t *testing.T) {
+	cf := facts.CallFact{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 0, End: 5}, CallerName: "c", CalleeName: "d"}
+	if err := schema.ValidateCallFact(cf); err == nil {
+		t.Fatal("expected error for invalid span")
+	}
+}
+
+func TestValidateCallFactMissingCallerName(t *testing.T) {
+	cf := facts.CallFact{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 1, End: 5}, CallerName: "", CalleeName: "d"}
+	if err := schema.ValidateCallFact(cf); err == nil {
+		t.Fatal("expected error for missing caller name")
+	}
+}
+
+func TestValidateCallFactMissingCalleeName(t *testing.T) {
+	cf := facts.CallFact{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 1, End: 5}, CallerName: "c", CalleeName: ""}
+	if err := schema.ValidateCallFact(cf); err == nil {
+		t.Fatal("expected error for missing callee name")
+	}
+}
+
+// --- RouteBindingFact validation ---
+
+func TestValidateRouteBindingFactValid(t *testing.T) {
+	rb, _ := facts.NewRouteBindingFact(facts.LangGo, "routes.go", facts.Span{Start: 1, End: 5}, "handler", "GET", "/api", nil, nil, "route")
+	if err := schema.ValidateRouteBindingFact(rb); err != nil {
+		t.Fatalf("expected valid, got: %v", err)
+	}
+}
+
+func TestValidateRouteBindingFactInvalidLanguage(t *testing.T) {
+	rb := facts.RouteBindingFact{Language: "rust", File: "routes.go", Span: facts.Span{Start: 1, End: 5}, Handler: "h"}
+	if err := schema.ValidateRouteBindingFact(rb); err == nil {
+		t.Fatal("expected error for invalid language")
+	}
+}
+
+func TestValidateRouteBindingFactMissingFile(t *testing.T) {
+	rb := facts.RouteBindingFact{Language: facts.LangGo, File: "", Span: facts.Span{Start: 1, End: 5}, Handler: "h"}
+	if err := schema.ValidateRouteBindingFact(rb); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestValidateRouteBindingFactInvalidSpan(t *testing.T) {
+	rb := facts.RouteBindingFact{Language: facts.LangGo, File: "routes.go", Span: facts.Span{Start: 0, End: 5}, Handler: "h"}
+	if err := schema.ValidateRouteBindingFact(rb); err == nil {
+		t.Fatal("expected error for invalid span")
+	}
+}
+
+func TestValidateRouteBindingFactMissingHandler(t *testing.T) {
+	rb := facts.RouteBindingFact{Language: facts.LangGo, File: "routes.go", Span: facts.Span{Start: 1, End: 5}, Handler: ""}
+	if err := schema.ValidateRouteBindingFact(rb); err == nil {
+		t.Fatal("expected error for missing handler")
+	}
+}
+
+// --- AppBindingFact validation ---
+
+func TestValidateAppBindingFactValid(t *testing.T) {
+	ab, _ := facts.NewAppBindingFact(facts.LangGo, "main.go", facts.Span{Start: 1, End: 5}, "middleware", "Auth", "global")
+	if err := schema.ValidateAppBindingFact(ab); err != nil {
+		t.Fatalf("expected valid, got: %v", err)
+	}
+}
+
+func TestValidateAppBindingFactInvalidLanguage(t *testing.T) {
+	ab := facts.AppBindingFact{Language: "rust", File: "main.rs", Span: facts.Span{Start: 1, End: 5}, Kind: "middleware", Name: "Auth"}
+	if err := schema.ValidateAppBindingFact(ab); err == nil {
+		t.Fatal("expected error for invalid language")
+	}
+}
+
+func TestValidateAppBindingFactMissingFile(t *testing.T) {
+	ab := facts.AppBindingFact{Language: facts.LangGo, File: "", Span: facts.Span{Start: 1, End: 5}, Kind: "middleware", Name: "Auth"}
+	if err := schema.ValidateAppBindingFact(ab); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestValidateAppBindingFactInvalidSpan(t *testing.T) {
+	ab := facts.AppBindingFact{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 0, End: 5}, Kind: "middleware", Name: "Auth"}
+	if err := schema.ValidateAppBindingFact(ab); err == nil {
+		t.Fatal("expected error for invalid span")
+	}
+}
+
+func TestValidateAppBindingFactMissingKind(t *testing.T) {
+	ab := facts.AppBindingFact{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 1, End: 5}, Kind: "", Name: "Auth"}
+	if err := schema.ValidateAppBindingFact(ab); err == nil {
+		t.Fatal("expected error for missing kind")
+	}
+}
+
+func TestValidateAppBindingFactMissingName(t *testing.T) {
+	ab := facts.AppBindingFact{Language: facts.LangGo, File: "main.go", Span: facts.Span{Start: 1, End: 5}, Kind: "middleware", Name: ""}
+	if err := schema.ValidateAppBindingFact(ab); err == nil {
+		t.Fatal("expected error for missing name")
+	}
+}
+
+// --- ConfigReadFact validation ---
+
+func TestValidateConfigReadFactValid(t *testing.T) {
+	cr, _ := facts.NewConfigReadFact(facts.LangGo, "config.go", facts.Span{Start: 1, End: 3}, "DB_URL", "env")
+	if err := schema.ValidateConfigReadFact(cr); err != nil {
+		t.Fatalf("expected valid, got: %v", err)
+	}
+}
+
+func TestValidateConfigReadFactInvalidLanguage(t *testing.T) {
+	cr := facts.ConfigReadFact{Language: "rust", File: "config.go", Span: facts.Span{Start: 1, End: 3}, Key: "KEY"}
+	if err := schema.ValidateConfigReadFact(cr); err == nil {
+		t.Fatal("expected error for invalid language")
+	}
+}
+
+func TestValidateConfigReadFactMissingFile(t *testing.T) {
+	cr := facts.ConfigReadFact{Language: facts.LangGo, File: "", Span: facts.Span{Start: 1, End: 3}, Key: "KEY"}
+	if err := schema.ValidateConfigReadFact(cr); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestValidateConfigReadFactInvalidSpan(t *testing.T) {
+	cr := facts.ConfigReadFact{Language: facts.LangGo, File: "config.go", Span: facts.Span{Start: 0, End: 3}, Key: "KEY"}
+	if err := schema.ValidateConfigReadFact(cr); err == nil {
+		t.Fatal("expected error for invalid span")
+	}
+}
+
+func TestValidateConfigReadFactMissingKey(t *testing.T) {
+	cr := facts.ConfigReadFact{Language: facts.LangGo, File: "config.go", Span: facts.Span{Start: 1, End: 3}, Key: ""}
+	if err := schema.ValidateConfigReadFact(cr); err == nil {
+		t.Fatal("expected error for missing key")
+	}
+}
+
+// --- FileRoleFact validation ---
+
+func TestValidateFileRoleFactValid(t *testing.T) {
+	fr, _ := facts.NewFileRoleFact(facts.LangGo, "handler.go", "controller")
+	if err := schema.ValidateFileRoleFact(fr); err != nil {
+		t.Fatalf("expected valid, got: %v", err)
+	}
+}
+
+func TestValidateFileRoleFactInvalidLanguage(t *testing.T) {
+	fr := facts.FileRoleFact{Language: "rust", File: "main.rs", Role: "controller"}
+	if err := schema.ValidateFileRoleFact(fr); err == nil {
+		t.Fatal("expected error for invalid language")
+	}
+}
+
+func TestValidateFileRoleFactMissingFile(t *testing.T) {
+	fr := facts.FileRoleFact{Language: facts.LangGo, File: "", Role: "controller"}
+	if err := schema.ValidateFileRoleFact(fr); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestValidateFileRoleFactMissingRole(t *testing.T) {
+	fr := facts.FileRoleFact{Language: facts.LangGo, File: "main.go", Role: ""}
+	if err := schema.ValidateFileRoleFact(fr); err == nil {
+		t.Fatal("expected error for missing role")
 	}
 }

@@ -177,6 +177,94 @@ func ValidateDependencyFact(d facts.DependencyFact) error {
 	return nil
 }
 
+// ValidateCallFact checks required fields on a CallFact.
+func ValidateCallFact(c facts.CallFact) error {
+	if !c.Language.IsValid() {
+		return fmt.Errorf("invalid language: %q", c.Language)
+	}
+	if c.File == "" {
+		return fmt.Errorf("file path is required")
+	}
+	if err := c.Span.Validate(); err != nil {
+		return fmt.Errorf("invalid span: %w", err)
+	}
+	if c.CallerName == "" {
+		return fmt.Errorf("caller name is required")
+	}
+	if c.CalleeName == "" {
+		return fmt.Errorf("callee name is required")
+	}
+	return nil
+}
+
+// ValidateRouteBindingFact checks required fields on a RouteBindingFact.
+func ValidateRouteBindingFact(rb facts.RouteBindingFact) error {
+	if !rb.Language.IsValid() {
+		return fmt.Errorf("invalid language: %q", rb.Language)
+	}
+	if rb.File == "" {
+		return fmt.Errorf("file path is required")
+	}
+	if err := rb.Span.Validate(); err != nil {
+		return fmt.Errorf("invalid span: %w", err)
+	}
+	if rb.Handler == "" {
+		return fmt.Errorf("handler is required")
+	}
+	return nil
+}
+
+// ValidateAppBindingFact checks required fields on an AppBindingFact.
+func ValidateAppBindingFact(ab facts.AppBindingFact) error {
+	if !ab.Language.IsValid() {
+		return fmt.Errorf("invalid language: %q", ab.Language)
+	}
+	if ab.File == "" {
+		return fmt.Errorf("file path is required")
+	}
+	if err := ab.Span.Validate(); err != nil {
+		return fmt.Errorf("invalid span: %w", err)
+	}
+	if ab.Kind == "" {
+		return fmt.Errorf("binding kind is required")
+	}
+	if ab.Name == "" {
+		return fmt.Errorf("binding name is required")
+	}
+	return nil
+}
+
+// ValidateConfigReadFact checks required fields on a ConfigReadFact.
+func ValidateConfigReadFact(cr facts.ConfigReadFact) error {
+	if !cr.Language.IsValid() {
+		return fmt.Errorf("invalid language: %q", cr.Language)
+	}
+	if cr.File == "" {
+		return fmt.Errorf("file path is required")
+	}
+	if err := cr.Span.Validate(); err != nil {
+		return fmt.Errorf("invalid span: %w", err)
+	}
+	if cr.Key == "" {
+		return fmt.Errorf("config key is required")
+	}
+	return nil
+}
+
+// ValidateFileRoleFact checks required fields on a FileRoleFact.
+func ValidateFileRoleFact(fr facts.FileRoleFact) error {
+	if !fr.Language.IsValid() {
+		return fmt.Errorf("invalid language: %q", fr.Language)
+	}
+	if fr.File == "" {
+		return fmt.Errorf("file path is required")
+	}
+	if fr.Role == "" {
+		return fmt.Errorf("file role is required")
+	}
+	return nil
+}
+
 // ValidateReportFinding checks required fields on a rules.Finding (the type
 // actually used in report.json output). This is separate from ValidateFinding
 // which validates facts.Finding (the internal fact model).
@@ -192,6 +280,12 @@ func ValidateReportFinding(f rules.Finding) error {
 	}
 	if f.VerificationLevel == "" {
 		return fmt.Errorf("verification level is required")
+	}
+	if f.TrustClass == "" {
+		return fmt.Errorf("trust_class is required")
+	}
+	if !rules.ValidTrustClass(f.TrustClass) {
+		return fmt.Errorf("invalid trust_class %q", f.TrustClass)
 	}
 	for i, e := range f.Evidence {
 		if err := ValidateReportEvidence(e); err != nil {

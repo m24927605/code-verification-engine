@@ -31,6 +31,11 @@ type ReportContractInput struct {
 	SummaryPass         int
 	SummaryFail         int
 	SummaryUnknown      int
+	// Signal summary counts — must partition the fail+unknown space.
+	SignalActionableFail         int
+	SignalAdvisoryFail           int
+	SignalInformationalDetection int
+	SignalUnknown                int
 }
 
 // ScanContractInput holds the fields needed to validate a scan report contract.
@@ -74,9 +79,48 @@ func ValidateReportContract(input ReportContractInput) []error {
 		errs = append(errs, fmt.Errorf("summary counts don't match findings: pass=%d/%d fail=%d/%d unknown=%d/%d",
 			input.SummaryPass, pass, input.SummaryFail, fail, input.SummaryUnknown, unknown))
 	}
+
+	// Signal summary must partition the non-pass findings: actionable + advisory + informational = fail,
+	// and signal unknown = summary unknown.
+	signalTotal := input.SignalActionableFail + input.SignalAdvisoryFail + input.SignalInformationalDetection
+	if signalTotal != fail {
+		errs = append(errs, fmt.Errorf("signal_summary fail partition mismatch: actionable(%d)+advisory(%d)+informational(%d)=%d, want fail=%d",
+			input.SignalActionableFail, input.SignalAdvisoryFail, input.SignalInformationalDetection, signalTotal, fail))
+	}
+	if input.SignalUnknown != unknown {
+		errs = append(errs, fmt.Errorf("signal_summary.unknown mismatch: got %d, want %d",
+			input.SignalUnknown, unknown))
+	}
+
 	return errs
 }
 
+
+// ValidateTrustSummaryContract validates that the trust summary counts match findings.
+func ValidateTrustSummaryContract(findings []rules.Finding, machineTrusted, advisory, humanOrRuntimeRequired int) []error {
+	var errs []error
+	mt, adv, hr := 0, 0, 0
+	for _, f := range findings {
+		switch f.TrustClass {
+		case rules.TrustMachineTrusted:
+			mt++
+		case rules.TrustAdvisory:
+			adv++
+		case rules.TrustHumanOrRuntimeRequired:
+			hr++
+		}
+	}
+	if machineTrusted != mt {
+		errs = append(errs, fmt.Errorf("trust_summary.machine_trusted count mismatch: got %d, want %d", machineTrusted, mt))
+	}
+	if advisory != adv {
+		errs = append(errs, fmt.Errorf("trust_summary.advisory count mismatch: got %d, want %d", advisory, adv))
+	}
+	if humanOrRuntimeRequired != hr {
+		errs = append(errs, fmt.Errorf("trust_summary.human_or_runtime_required count mismatch: got %d, want %d", humanOrRuntimeRequired, hr))
+	}
+	return errs
+}
 
 // ValidateScanContract validates the complete scan.json structure.
 func ValidateScanContract(input ScanContractInput) []error {
