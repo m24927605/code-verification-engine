@@ -122,29 +122,17 @@ func runVerify(args []string) int {
 	var llmProvider interpret.LLMProvider
 	if *interpretFlag {
 		apiKey := os.Getenv("CVE_LLM_API_KEY")
-		if apiKey == "" {
-			fmt.Fprintf(os.Stderr, "[WARN] --interpret: CVE_LLM_API_KEY not set, skipping LLM interpretation\n")
-			// Don't set llmProvider — interpretation will be skipped entirely
-		} else {
-			provider := os.Getenv("CVE_LLM_PROVIDER") // "anthropic" (default) or "openai"
-			switch provider {
-			case "openai":
-				apiURL := os.Getenv("CVE_LLM_API_URL")
-				if apiURL == "" {
-					apiURL = "https://api.openai.com/v1/chat/completions"
-				}
-				model := os.Getenv("CVE_LLM_MODEL")
-				rawProvider := interpret.NewOpenAIProvider(apiKey, apiURL, model)
-				llmProvider = interpret.NewSafeProvider(rawProvider, interpret.DefaultProviderConfig())
-			default:
-				// Anthropic (default)
-				apiURL := os.Getenv("CVE_LLM_API_URL")
-				if apiURL == "" {
-					apiURL = "https://api.anthropic.com/v1/messages"
-				}
-				rawProvider := interpret.NewHTTPProvider(apiKey, apiURL)
-				llmProvider = interpret.NewSafeProvider(rawProvider, interpret.DefaultProviderConfig())
+		provider := os.Getenv("CVE_LLM_PROVIDER")
+		if provider == "" || provider == "ollama" {
+			apiURL := os.Getenv("CVE_LLM_API_URL")
+			if apiURL == "" {
+				apiURL = "http://localhost:11434/v1/chat/completions"
 			}
+			model := os.Getenv("CVE_LLM_MODEL")
+			rawProvider := interpret.NewChatCompletionsProvider(apiKey, apiURL, model)
+			llmProvider = interpret.NewSafeProvider(rawProvider, interpret.DefaultProviderConfig())
+		} else {
+			fmt.Fprintf(os.Stderr, "[WARN] --interpret: unsupported CVE_LLM_PROVIDER=%s, only ollama is supported\n", provider)
 		}
 	}
 

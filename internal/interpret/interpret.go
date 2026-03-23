@@ -15,7 +15,7 @@ type Interpreter struct {
 }
 
 // LLMProvider is the interface for LLM backends.
-// Implementations can use Claude, OpenAI, or any other LLM.
+// Implementations can use Ollama or any other LLM.
 type LLMProvider interface {
 	Complete(ctx context.Context, prompt string) (string, error)
 }
@@ -54,8 +54,8 @@ type InterpretedFinding struct {
 type InterpretedReport struct {
 	Findings   []InterpretedFinding  `json:"findings"`
 	Summary    InterpretationSummary `json:"interpretation_summary"`
-	ErrorCount int                   `json:"error_count"`  // Number of LLM calls that failed
-	SkipCount  int                   `json:"skip_count"`   // Number of findings whose interpretation was skipped
+	ErrorCount int                   `json:"error_count"` // Number of LLM calls that failed
+	SkipCount  int                   `json:"skip_count"`  // Number of findings whose interpretation was skipped
 }
 
 // InterpretationSummary provides high-level triage info.

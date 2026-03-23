@@ -28,8 +28,8 @@ type VerifyInput struct {
 
 // VerifyOutput is the complete verification result.
 type VerifyOutput struct {
-	ExitCode int    `json:"exit_code"`
-	Success  bool   `json:"success"`
+	ExitCode int  `json:"exit_code"`
+	Success  bool `json:"success"`
 
 	// Typed structured outputs — stable contracts with enforced trust boundaries.
 	// Consumers MUST use these typed fields to access findings and inspect TrustClass.
@@ -91,7 +91,7 @@ type ScanEvent struct {
 }
 
 // LLMProvider is the interface for LLM backends used by the interpretation layer.
-// Implementations can wrap Claude, OpenAI, or any other LLM API.
+// Implementations can wrap Ollama or any other LLM API.
 type LLMProvider interface {
 	Complete(ctx context.Context, prompt string) (string, error)
 }

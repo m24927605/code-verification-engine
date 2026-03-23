@@ -228,102 +228,6 @@ func TestStubProviderDoesNotMarkLLMGenerated(t *testing.T) {
 	}
 }
 
-func TestHTTPProviderSuccess(t *testing.T) {
-	provider := NewHTTPProvider("test-key", "https://api.test/v1/messages")
-	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.Header.Get("x-api-key") != "test-key" {
-			t.Errorf("expected x-api-key=test-key, got %q", req.Header.Get("x-api-key"))
-		}
-		if req.Header.Get("anthropic-version") != "2023-06-01" {
-			t.Errorf("unexpected anthropic-version header")
-		}
-		if req.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("expected Content-Type application/json")
-		}
-		return jsonResponse(map[string]interface{}{
-			"content": []map[string]string{
-				{"text": "EXPLANATION: Test response\nTRIAGE: likely_real\nTRIAGE_REASON: test\nFIX: test fix"},
-			},
-		}), nil
-	})}
-
-	result, err := provider.Complete(context.Background(), "test prompt")
-	if err != nil {
-		t.Fatalf("Complete failed: %v", err)
-	}
-	if result != "EXPLANATION: Test response\nTRIAGE: likely_real\nTRIAGE_REASON: test\nFIX: test fix" {
-		t.Errorf("unexpected response: %q", result)
-	}
-}
-
-func TestHTTPProviderErrorStatus(t *testing.T) {
-	provider := NewHTTPProvider("bad-key", "https://api.test/v1/messages")
-	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return errorResponse(http.StatusUnauthorized, `{"error":{"message":"invalid api key"}}`), nil
-	})}
-
-	_, err := provider.Complete(context.Background(), "test")
-	if err == nil {
-		t.Fatal("expected error for 401 response")
-	}
-}
-
-func TestHTTPProviderCancelledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	provider := NewHTTPProvider("key", "https://api.test/v1/messages")
-	_, err := provider.Complete(ctx, "test")
-	if err == nil {
-		t.Fatal("expected error for cancelled context")
-	}
-}
-
-func TestHTTPProviderEmptyContent(t *testing.T) {
-	provider := NewHTTPProvider("key", "https://api.test/v1/messages")
-	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return jsonResponse(map[string]interface{}{"content": []map[string]string{}}), nil
-	})}
-
-	result, err := provider.Complete(context.Background(), "test")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if result != "" {
-		t.Errorf("expected empty result for empty content, got %q", result)
-	}
-}
-
-func TestHTTPProviderIntegrationWithInterpreter(t *testing.T) {
-	provider := NewHTTPProvider("test-key", "https://api.test/v1/messages")
-	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return jsonResponse(map[string]interface{}{
-			"content": []map[string]string{
-				{"text": "EXPLANATION: Direct DB access in handler\nTRIAGE: likely_real\nTRIAGE_REASON: Clear violation\nFIX: Use repository pattern"},
-			},
-		}), nil
-	})}
-
-	interp := mustNew(t, provider)
-	findings := []rules.Finding{
-		{RuleID: "ARCH-001", Status: rules.StatusFail, Message: "Direct DB in handler"},
-	}
-	report, err := interp.Interpret(context.Background(), findings, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := report.Findings[0]
-	if !f.LLMGenerated {
-		t.Error("should be LLMGenerated when HTTPProvider returns content")
-	}
-	if f.Explanation == "" {
-		t.Error("expected explanation from HTTPProvider")
-	}
-	if f.TriageHint != "likely_real" {
-		t.Errorf("expected triage likely_real, got %q", f.TriageHint)
-	}
-}
-
 func TestBuildUnknownPromptWithEvidenceAndSnippets(t *testing.T) {
 	f := rules.Finding{
 		RuleID:         "SEC-AUTH-002",
@@ -457,30 +361,6 @@ func TestInterpretSummaryCounts(t *testing.T) {
 	}
 }
 
-func TestHTTPProviderInvalidJSON(t *testing.T) {
-	provider := NewHTTPProvider("key", "https://api.test/v1/messages")
-	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return textResponse("not json"), nil
-	})}
-
-	_, err := provider.Complete(context.Background(), "test")
-	if err == nil {
-		t.Fatal("expected error for invalid JSON response")
-	}
-}
-
-func TestHTTPProviderTransportError(t *testing.T) {
-	provider := NewHTTPProvider("key", "https://api.test/v1/messages")
-	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return nil, fmt.Errorf("connection refused")
-	})}
-
-	_, err := provider.Complete(context.Background(), "test")
-	if err == nil {
-		t.Fatal("expected error for transport failure")
-	}
-}
-
 // sequentialProvider returns responses in order for multi-call tests.
 type sequentialProvider struct {
 	responses []string
@@ -497,11 +377,11 @@ func (s *sequentialProvider) Complete(ctx context.Context, prompt string) (strin
 }
 
 // ---------------------------------------------------------------------------
-// OpenAIProvider tests
+// ChatCompletionsProvider tests
 // ---------------------------------------------------------------------------
 
-func TestOpenAIProviderSuccess(t *testing.T) {
-	provider := NewOpenAIProvider("test-key", "https://api.test/v1/chat/completions", "")
+func TestChatCompletionsProviderSuccess(t *testing.T) {
+	provider := NewChatCompletionsProvider("test-key", "http://localhost:11434/v1/chat/completions", "")
 	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.Header.Get("Authorization") != "Bearer test-key" {
 			t.Errorf("expected Authorization=Bearer test-key, got %q", req.Header.Get("Authorization"))
@@ -510,15 +390,15 @@ func TestOpenAIProviderSuccess(t *testing.T) {
 			t.Errorf("expected Content-Type application/json")
 		}
 		if req.Header.Get("x-api-key") != "" {
-			t.Error("OpenAI provider should not send x-api-key header")
+			t.Error("chat completions provider should not send x-api-key header")
 		}
 		if req.Header.Get("anthropic-version") != "" {
-			t.Error("OpenAI provider should not send anthropic-version header")
+			t.Error("chat completions provider should not send anthropic-version header")
 		}
 		var reqBody map[string]interface{}
 		json.NewDecoder(req.Body).Decode(&reqBody)
-		if reqBody["model"] != "o3-mini" {
-			t.Errorf("expected model=o3-mini, got %v", reqBody["model"])
+		if reqBody["model"] != "codellama:8b" {
+			t.Errorf("expected model=codellama:8b, got %v", reqBody["model"])
 		}
 		return jsonResponse(map[string]interface{}{
 			"choices": []map[string]interface{}{
@@ -538,13 +418,13 @@ func TestOpenAIProviderSuccess(t *testing.T) {
 	}
 }
 
-func TestOpenAIProviderCustomModel(t *testing.T) {
-	provider := NewOpenAIProvider("key", "https://api.test/v1/chat/completions", "gpt-4o")
+func TestChatCompletionsProviderCustomModel(t *testing.T) {
+	provider := NewChatCompletionsProvider("key", "http://localhost:11434/v1/chat/completions", "codellama:13b")
 	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var reqBody map[string]interface{}
 		json.NewDecoder(req.Body).Decode(&reqBody)
-		if reqBody["model"] != "gpt-4o" {
-			t.Errorf("expected model=gpt-4o, got %v", reqBody["model"])
+		if reqBody["model"] != "codellama:13b" {
+			t.Errorf("expected model=codellama:13b, got %v", reqBody["model"])
 		}
 		return jsonResponse(map[string]interface{}{
 			"choices": []map[string]interface{}{
@@ -562,8 +442,35 @@ func TestOpenAIProviderCustomModel(t *testing.T) {
 	}
 }
 
-func TestOpenAIProviderErrorStatus(t *testing.T) {
-	provider := NewOpenAIProvider("bad-key", "https://api.test/v1/chat/completions", "")
+func TestChatCompletionsProviderWithoutAPIKeyDoesNotSendAuthorization(t *testing.T) {
+	provider := NewChatCompletionsProvider("", "http://localhost:11434/v1/chat/completions", "codellama:8b")
+	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Authorization") != "" {
+			t.Errorf("expected no Authorization header, got %q", req.Header.Get("Authorization"))
+		}
+		var reqBody map[string]interface{}
+		json.NewDecoder(req.Body).Decode(&reqBody)
+		if reqBody["model"] != "codellama:8b" {
+			t.Errorf("expected model=codellama:8b, got %v", reqBody["model"])
+		}
+		return jsonResponse(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "ok"}},
+			},
+		}), nil
+	})}
+
+	result, err := provider.Complete(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Complete failed: %v", err)
+	}
+	if result != "ok" {
+		t.Errorf("unexpected response: %q", result)
+	}
+}
+
+func TestChatCompletionsProviderErrorStatus(t *testing.T) {
+	provider := NewChatCompletionsProvider("bad-key", "http://localhost:11434/v1/chat/completions", "")
 	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return errorResponse(http.StatusUnauthorized, `{"error":{"message":"invalid api key"}}`), nil
 	})}
@@ -574,19 +481,19 @@ func TestOpenAIProviderErrorStatus(t *testing.T) {
 	}
 }
 
-func TestOpenAIProviderCancelledContext(t *testing.T) {
+func TestChatCompletionsProviderCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	provider := NewOpenAIProvider("key", "https://api.test/v1/chat/completions", "")
+	provider := NewChatCompletionsProvider("key", "http://localhost:11434/v1/chat/completions", "")
 	_, err := provider.Complete(ctx, "test")
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
 	}
 }
 
-func TestOpenAIProviderEmptyChoices(t *testing.T) {
-	provider := NewOpenAIProvider("key", "https://api.test/v1/chat/completions", "")
+func TestChatCompletionsProviderEmptyChoices(t *testing.T) {
+	provider := NewChatCompletionsProvider("key", "http://localhost:11434/v1/chat/completions", "")
 	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return jsonResponse(map[string]interface{}{"choices": []map[string]interface{}{}}), nil
 	})}
@@ -600,8 +507,8 @@ func TestOpenAIProviderEmptyChoices(t *testing.T) {
 	}
 }
 
-func TestOpenAIProviderInvalidJSON(t *testing.T) {
-	provider := NewOpenAIProvider("key", "https://api.test/v1/chat/completions", "")
+func TestChatCompletionsProviderInvalidJSON(t *testing.T) {
+	provider := NewChatCompletionsProvider("key", "http://localhost:11434/v1/chat/completions", "")
 	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return textResponse("not json"), nil
 	})}
@@ -612,8 +519,8 @@ func TestOpenAIProviderInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestOpenAIProviderIntegrationWithInterpreter(t *testing.T) {
-	provider := NewOpenAIProvider("test-key", "https://api.test/v1/chat/completions", "o3-mini")
+func TestChatCompletionsProviderIntegrationWithInterpreter(t *testing.T) {
+	provider := NewChatCompletionsProvider("test-key", "http://localhost:11434/v1/chat/completions", "codellama:8b")
 	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return jsonResponse(map[string]interface{}{
 			"choices": []map[string]interface{}{
@@ -634,19 +541,19 @@ func TestOpenAIProviderIntegrationWithInterpreter(t *testing.T) {
 	}
 	f := report.Findings[0]
 	if !f.LLMGenerated {
-		t.Error("should be LLMGenerated when OpenAIProvider returns content")
+		t.Error("should be LLMGenerated when chat completions provider returns content")
 	}
 	if f.Explanation == "" {
-		t.Error("expected explanation from OpenAIProvider")
+		t.Error("expected explanation from chat completions provider")
 	}
 	if f.TriageHint != "likely_real" {
 		t.Errorf("expected triage likely_real, got %q", f.TriageHint)
 	}
 }
 
-func TestHTTPProviderOversizedResponse(t *testing.T) {
+func TestChatCompletionsProviderOversizedResponse(t *testing.T) {
 	bigBody := strings.Repeat("x", 200)
-	provider := NewHTTPProvider("test-key", "http://api.example.com/v1/messages")
+	provider := NewChatCompletionsProvider("test-key", "http://localhost:11434/v1/chat/completions", "")
 	provider.MaxResponseBytes = 100
 	provider.client = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -662,45 +569,8 @@ func TestHTTPProviderOversizedResponse(t *testing.T) {
 	}
 }
 
-func TestHTTPProviderZeroMaxBytes(t *testing.T) {
-	provider := NewHTTPProvider("test-key", "http://api.example.com/v1/messages")
-	provider.MaxResponseBytes = 0
-	provider.client = &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			return jsonResponse(map[string]interface{}{
-				"content": []map[string]string{{"text": "ok"}},
-			}), nil
-		}),
-	}
-	result, err := provider.Complete(context.Background(), "test")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "ok" {
-		t.Errorf("expected 'ok', got %q", result)
-	}
-}
-
-func TestOpenAIProviderOversizedResponse(t *testing.T) {
-	bigBody := strings.Repeat("x", 200)
-	provider := NewOpenAIProvider("test-key", "http://api.example.com/v1/chat/completions", "")
-	provider.MaxResponseBytes = 100
-	provider.client = &http.Client{
-		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			return textResponse(bigBody), nil
-		}),
-	}
-	_, err := provider.Complete(context.Background(), "test")
-	if err == nil {
-		t.Fatal("expected error for oversized response")
-	}
-	if err != ErrResponseTooLarge {
-		t.Errorf("expected ErrResponseTooLarge, got: %v", err)
-	}
-}
-
-func TestOpenAIProviderZeroMaxBytes(t *testing.T) {
-	provider := NewOpenAIProvider("test-key", "http://api.example.com/v1/chat/completions", "")
+func TestChatCompletionsProviderZeroMaxBytes(t *testing.T) {
+	provider := NewChatCompletionsProvider("test-key", "http://localhost:11434/v1/chat/completions", "")
 	provider.MaxResponseBytes = 0
 	provider.client = &http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

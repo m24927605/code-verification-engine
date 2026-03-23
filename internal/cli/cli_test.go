@@ -207,28 +207,15 @@ func TestRunVerifyRefFlag(t *testing.T) {
 	}
 }
 
-func TestRunVerifyInterpretOpenAIProvider(t *testing.T) {
-	os.Setenv("CVE_LLM_API_KEY", "test-openai-key")
-	os.Setenv("CVE_LLM_PROVIDER", "openai")
-	defer os.Unsetenv("CVE_LLM_API_KEY")
-	defer os.Unsetenv("CVE_LLM_PROVIDER")
-	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--interpret"})
-	if code == ExitInvalidInput {
-		t.Errorf("verify with --interpret and openai provider should not exit with invalid input, got %d", code)
-	}
-}
-
-func TestRunVerifyInterpretOpenAIProviderWithModelAndURL(t *testing.T) {
-	os.Setenv("CVE_LLM_API_KEY", "test-openai-key")
-	os.Setenv("CVE_LLM_PROVIDER", "openai")
-	os.Setenv("CVE_LLM_API_URL", "https://custom-openai.example.com/v1/chat/completions")
-	os.Setenv("CVE_LLM_MODEL", "gpt-4o")
-	defer os.Unsetenv("CVE_LLM_API_KEY")
+func TestRunVerifyInterpretOllamaProviderWithoutAPIKey(t *testing.T) {
+	os.Setenv("CVE_LLM_PROVIDER", "ollama")
+	os.Setenv("CVE_LLM_API_URL", "http://localhost:11434/v1/chat/completions")
+	os.Setenv("CVE_LLM_MODEL", "codellama:8b")
 	defer os.Unsetenv("CVE_LLM_PROVIDER")
 	defer os.Unsetenv("CVE_LLM_API_URL")
 	defer os.Unsetenv("CVE_LLM_MODEL")
 	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--interpret"})
 	if code == ExitInvalidInput {
-		t.Errorf("verify with openai provider + custom model/url should not exit with invalid input, got %d", code)
+		t.Errorf("verify with ollama provider should not exit with invalid input, got %d", code)
 	}
 }

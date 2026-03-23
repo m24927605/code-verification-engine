@@ -218,10 +218,19 @@ Custom languages can be added via the `AnalyzerPlugin` interface.
 
 | Variable           | Description                                        |
 |--------------------|----------------------------------------------------|
-| `CVE_LLM_API_KEY`  | API key for LLM interpretation layer               |
-| `CVE_LLM_PROVIDER` | LLM provider: `anthropic` (default) or `openai`   |
+| `CVE_LLM_PROVIDER` | LLM provider: `ollama`                             |
 | `CVE_LLM_API_URL`  | Override LLM endpoint URL                          |
-| `CVE_LLM_MODEL`    | Model ID (for OpenAI provider)                     |
+| `CVE_LLM_MODEL`    | Model ID for `ollama` chat-completions provider    |
+
+Example for local Ollama with Code Llama 8B:
+
+```bash
+export CVE_LLM_PROVIDER=ollama
+export CVE_LLM_API_URL=http://localhost:11434/v1/chat/completions
+export CVE_LLM_MODEL=codellama:8b
+
+cve verify --repo . --output ./out --interpret
+```
 
 ## Testing
 
