@@ -474,19 +474,13 @@ func Run(cfg Config) Result {
 	fmt.Fprintf(progress, "[INFO] report written to: %s\n", cfg.OutputDir)
 
 	// Write accounting.json
-	accountingPath := filepath.Join(cfg.OutputDir, "accounting.json")
-	if data, err := json.MarshalIndent(accounting, "", "  "); err != nil {
-		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("marshal accounting: %v", err)}}
-	} else if err := os.WriteFile(accountingPath, append(data, '\n'), 0o644); err != nil {
-		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write accounting.json: %v", err)}}
+	if err := writeJSONFile(filepath.Join(cfg.OutputDir, "accounting.json"), accounting); err != nil {
+		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("accounting.json: %v", err)}}
 	}
 
 	// Write evidence graph
-	evGraphPath := filepath.Join(cfg.OutputDir, "evidence-graph.json")
-	if data, err := json.MarshalIndent(evGraph, "", "  "); err != nil {
-		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("marshal evidence graph: %v", err)}}
-	} else if err := os.WriteFile(evGraphPath, append(data, '\n'), 0o644); err != nil {
-		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write evidence-graph.json: %v", err)}}
+	if err := writeJSONFile(filepath.Join(cfg.OutputDir, "evidence-graph.json"), evGraph); err != nil {
+		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("evidence-graph.json: %v", err)}}
 	}
 
 	// Generate claim report if claim set specified
@@ -494,11 +488,8 @@ func Run(cfg Config) Result {
 	if claimSet != nil {
 		evaluator := claims.NewEvaluator()
 		claimReport = evaluator.Evaluate(claimSet, execResult)
-		claimPath := filepath.Join(cfg.OutputDir, "claims.json")
-		if data, err := json.MarshalIndent(claimReport, "", "  "); err != nil {
-			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("marshal claims: %v", err)}}
-		} else if err := os.WriteFile(claimPath, append(data, '\n'), 0o644); err != nil {
-			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write claims.json: %v", err)}}
+		if err := writeJSONFile(filepath.Join(cfg.OutputDir, "claims.json"), claimReport); err != nil {
+			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("claims.json: %v", err)}}
 		}
 		fmt.Fprintf(progress, "[INFO] claims: verified=%d passed=%d failed=%d unknown=%d partial=%d\n",
 			claimReport.Verdicts.Verified, claimReport.Verdicts.Passed,
@@ -510,42 +501,30 @@ func Run(cfg Config) Result {
 	var interpretedReport *interpret.InterpretedReport
 	if cfg.Interpret && cfg.LLMProvider != nil {
 		fmt.Fprintf(progress, "[INFO] running LLM interpretation layer\n")
-		interp, interpInitErr := interpret.New(cfg.LLMProvider)
-		if interpInitErr != nil {
-			fmt.Fprintf(progress, "[WARN] LLM interpreter init failed: %v\n", interpInitErr)
-		} else {
-			snippets := collectEvidenceSnippets(ws.Path, execResult.Findings)
+		// interpret.New only fails on nil provider, which is already guarded above.
+		interp, _ := interpret.New(cfg.LLMProvider)
+		snippets := collectEvidenceSnippets(ws.Path, execResult.Findings)
 
-			// Step 1: Constrained LLM review for partial/unknown findings only.
-			// Machine-trusted rules remain deterministic. Advisory rules may get refined.
-			reviewReport, reviewErr := interp.Review(ctx, execResult.Findings, snippets, interpret.ReviewPolicyDefault)
-			if reviewErr != nil {
-				fmt.Fprintf(progress, "[WARN] LLM review failed: %v\n", reviewErr)
-			} else {
-				fmt.Fprintf(progress, "[INFO] LLM review: %d reviewed, %d skipped, %d errors\n",
-					reviewReport.ReviewCount, reviewReport.SkipCount, reviewReport.ErrorCount)
-				// Write review report
-				reviewPath := filepath.Join(cfg.OutputDir, "review.json")
-				if data, err := json.MarshalIndent(reviewReport, "", "  "); err == nil {
-					os.WriteFile(reviewPath, append(data, '\n'), 0o644)
-				}
-			}
-
-			// Step 2: Full interpretation (explanation, triage, suggested fix)
-			var interpErr error
-			interpretedReport, interpErr = interp.Interpret(ctx, execResult.Findings, snippets)
-			if interpErr != nil {
-				fmt.Fprintf(progress, "[WARN] LLM interpretation failed: %v\n", interpErr)
-			}
+		// Step 1: Constrained LLM review for partial/unknown findings only.
+		// Machine-trusted rules remain deterministic. Advisory rules may get refined.
+		// Review handles LLM errors internally (per-finding) and always returns nil error.
+		reviewReport, _ := interp.Review(ctx, execResult.Findings, snippets, interpret.ReviewPolicyDefault)
+		fmt.Fprintf(progress, "[INFO] LLM review: %d reviewed, %d skipped, %d errors\n",
+			reviewReport.ReviewCount, reviewReport.SkipCount, reviewReport.ErrorCount)
+		// Write review report
+		reviewPath := filepath.Join(cfg.OutputDir, "review.json")
+		if data, err := json.MarshalIndent(reviewReport, "", "  "); err == nil {
+			os.WriteFile(reviewPath, append(data, '\n'), 0o644)
 		}
+
+		// Step 2: Full interpretation (explanation, triage, suggested fix)
+		// Interpret handles LLM errors internally (per-finding) and always returns nil error.
+		interpretedReport, _ = interp.Interpret(ctx, execResult.Findings, snippets)
 	}
 
 	if interpretedReport != nil {
-		interpPath := filepath.Join(cfg.OutputDir, "interpreted.json")
-		if data, err := json.MarshalIndent(interpretedReport, "", "  "); err != nil {
-			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("marshal interpreted: %v", err)}}
-		} else if err := os.WriteFile(interpPath, append(data, '\n'), 0o644); err != nil {
-			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write interpreted.json: %v", err)}}
+		if err := writeJSONFile(filepath.Join(cfg.OutputDir, "interpreted.json"), interpretedReport); err != nil {
+			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("interpreted.json: %v", err)}}
 		}
 	}
 
@@ -780,4 +759,13 @@ func containsLanguage(languages []string, lang string) bool {
 		}
 	}
 	return false
+}
+
+// writeJSONFile marshals v as indented JSON and writes it to path.
+func writeJSONFile(path string, v interface{}) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }

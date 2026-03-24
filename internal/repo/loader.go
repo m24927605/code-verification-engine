@@ -169,14 +169,15 @@ func FilterFilesToSubtree(files []string, scanSubdir string) []string {
 // This is critical for scanning untrusted repos (e.g., candidate submissions,
 // third-party code) where a malicious symlink could read host files.
 func FilterSafePaths(root string, files []string) []string {
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return nil
-	}
 	// Resolve symlinks in root itself (e.g., macOS /var → /private/var)
 	// so the prefix check matches EvalSymlinks results below.
-	if resolved, err := filepath.EvalSymlinks(absRoot); err == nil {
-		absRoot = resolved
+	// EvalSymlinks returns an absolute, resolved path. If root does not
+	// exist (e.g., race condition), fall back to filepath.Abs.
+	absRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		// EvalSymlinks fails if root doesn't exist; fall back to Abs
+		// which always succeeds for absolute paths.
+		absRoot, _ = filepath.Abs(root)
 	}
 	absRoot = filepath.Clean(absRoot) + string(filepath.Separator)
 

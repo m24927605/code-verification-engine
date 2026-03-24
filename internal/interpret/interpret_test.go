@@ -569,6 +569,55 @@ func TestChatCompletionsProviderOversizedResponse(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsProviderNetworkError(t *testing.T) {
+	provider := NewChatCompletionsProvider("key", "http://localhost:11434/v1/chat/completions", "")
+	provider.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("connection refused")
+	})}
+
+	_, err := provider.Complete(context.Background(), "test")
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+	if !strings.Contains(err.Error(), "API call failed") {
+		t.Errorf("expected 'API call failed' error, got: %v", err)
+	}
+}
+
+func TestChatCompletionsProviderInvalidURL(t *testing.T) {
+	// Invalid URL with control characters to trigger NewRequestWithContext error
+	provider := NewChatCompletionsProvider("key", "http://localhost:11434/\x00invalid", "")
+
+	_, err := provider.Complete(context.Background(), "test")
+	if err == nil {
+		t.Fatal("expected error for invalid URL")
+	}
+	if !strings.Contains(err.Error(), "create request") {
+		t.Errorf("expected 'create request' error, got: %v", err)
+	}
+}
+
+func TestChatCompletionsProviderNegativeMaxBytes(t *testing.T) {
+	provider := NewChatCompletionsProvider("key", "http://localhost:11434/v1/chat/completions", "")
+	provider.MaxResponseBytes = -1 // should use default
+	provider.client = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{"message": map[string]string{"content": "ok"}},
+				},
+			}), nil
+		}),
+	}
+	result, err := provider.Complete(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "ok" {
+		t.Errorf("expected 'ok', got %q", result)
+	}
+}
+
 func TestChatCompletionsProviderZeroMaxBytes(t *testing.T) {
 	provider := NewChatCompletionsProvider("test-key", "http://localhost:11434/v1/chat/completions", "")
 	provider.MaxResponseBytes = 0

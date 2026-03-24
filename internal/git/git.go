@@ -104,8 +104,28 @@ func CreateWorkspaceWithClone(repoDir, ref, tmpRoot string) (*Workspace, error) 
 	return ws, nil
 }
 
+// cleanGitEnv returns an environment with git hook variables removed so that
+// child git processes are not affected by the parent hook context.
+func cleanGitEnv() []string {
+	var env []string
+	for _, e := range os.Environ() {
+		switch {
+		case strings.HasPrefix(e, "GIT_DIR="),
+			strings.HasPrefix(e, "GIT_INDEX_FILE="),
+			strings.HasPrefix(e, "GIT_WORK_TREE="),
+			strings.HasPrefix(e, "GIT_OBJECT_DIRECTORY="),
+			strings.HasPrefix(e, "GIT_ALTERNATE_OBJECT_DIRECTORIES="):
+			continue
+		default:
+			env = append(env, e)
+		}
+	}
+	return env
+}
+
 func createWorktree(repoDir, sha, wsPath string) (*Workspace, error) {
 	cmd := exec.Command("git", "-C", repoDir, "worktree", "add", "--detach", wsPath, sha)
+	cmd.Env = cleanGitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("worktree add failed: %s: %w", out, err)
 	}
@@ -119,11 +139,13 @@ func createWorktree(repoDir, sha, wsPath string) (*Workspace, error) {
 
 func createClone(repoDir, sha, wsPath string) (*Workspace, error) {
 	cmd := exec.Command("git", "clone", "--no-checkout", repoDir, wsPath)
+	cmd.Env = cleanGitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("clone failed: %s: %w", out, err)
 	}
 
 	cmd = exec.Command("git", "-C", wsPath, "checkout", sha)
+	cmd.Env = cleanGitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		os.RemoveAll(wsPath)
 		return nil, fmt.Errorf("checkout failed: %s: %w", out, err)
@@ -166,6 +188,7 @@ func CleanupWorkspace(ws *Workspace) error {
 	}
 	if ws.IsWorktree {
 		cmd := exec.Command("git", "-C", ws.SourceRepo, "worktree", "remove", "--force", ws.Path)
+		cmd.Env = cleanGitEnv()
 		if out, err := cmd.CombinedOutput(); err != nil {
 			os.RemoveAll(ws.Path)
 			return fmt.Errorf("worktree remove failed: %s: %w", out, err)
