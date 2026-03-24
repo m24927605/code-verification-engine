@@ -16,12 +16,12 @@ import (
 
 // goldenSpec mirrors the golden.json schema for skill fixtures.
 type skillGoldenSpec struct {
-	Profile          string                `json:"profile"`
-	Scenario         string                `json:"scenario"`
-	RequiredSignals  []skillGoldenSignal   `json:"required_signals"`
+	Profile          string                 `json:"profile"`
+	Scenario         string                 `json:"scenario"`
+	RequiredSignals  []skillGoldenSignal    `json:"required_signals"`
 	ForbiddenSignals []skillGoldenForbidden `json:"forbidden_signals"`
-	Summary          skillGoldenSummary    `json:"summary"`
-	Description      string                `json:"description"`
+	Summary          skillGoldenSummary     `json:"summary"`
+	Description      string                 `json:"description"`
 }
 
 type skillGoldenSignal struct {
@@ -235,6 +235,105 @@ func TestSkillInferenceE2E(t *testing.T) {
 					skillReport.Summary.Unsupported, golden.Summary.MinUnsupported)
 			}
 		})
+	}
+}
+
+func TestSkillInferenceE2E_Technologies(t *testing.T) {
+	repoPath := createTestRepo(t, []repoFile{
+		{
+			path: "package.json",
+			content: `{
+  "name": "tech-e2e",
+  "dependencies": {
+    "express": "^4.18.0",
+    "@prisma/client": "^5.0.0",
+    "react": "^18.2.0",
+    "react-router-dom": "^6.0.0",
+    "cors": "^2.8.5"
+  }
+}
+`,
+		},
+		{
+			path: "src/index.ts",
+			content: `import express from 'express';
+import cors from 'cors';
+import { PrismaClient } from '@prisma/client';
+import React from 'react';
+import { Navigate } from 'react-router-dom';
+
+const app = express();
+app.use(cors());
+app.get('/health', (_req, res) => {
+  const prisma = new PrismaClient();
+  void prisma;
+  const view = <Navigate to="/login" replace />;
+  void view;
+  const node = <div>ok</div>;
+  void node;
+  res.json({ ok: true });
+});
+export default app;
+`,
+		},
+		{
+			path: "tsconfig.json",
+			content: `{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "jsx": "react-jsx"
+  }
+}
+`,
+		},
+	})
+	outputDir := t.TempDir()
+
+	result := Run(Config{
+		RepoPath:     repoPath,
+		Ref:          "HEAD",
+		Profile:      "trusted-core",
+		OutputDir:    outputDir,
+		Format:       "json",
+		Progress:     os.Stderr,
+		Mode:         "skill_inference",
+		SkillProfile: "github-engineer-core",
+	})
+
+	requireOutputsWritten(t, result)
+
+	skillsPath := filepath.Join(outputDir, "skills.json")
+	skillsData, err := os.ReadFile(skillsPath)
+	if err != nil {
+		t.Fatalf("skills.json not found: %v", err)
+	}
+
+	var skillReport skills.Report
+	if err := json.Unmarshal(skillsData, &skillReport); err != nil {
+		t.Fatalf("invalid skills.json: %v", err)
+	}
+
+	techKinds := make(map[string]string)
+	for _, tech := range skillReport.Technologies {
+		techKinds[tech.Name] = tech.Kind
+	}
+
+	tests := map[string]string{
+		"express":      "framework",
+		"react":        "library",
+		"react-router": "router",
+		"prisma":       "orm",
+		"cors":         "middleware_package",
+	}
+	for name, kind := range tests {
+		if got := techKinds[name]; got != kind {
+			t.Errorf("technology %q kind = %q, want %q", name, got, kind)
+		}
+	}
+
+	if len(skillReport.Frameworks) == 0 || skillReport.Frameworks[0] != "express" {
+		t.Errorf("frameworks = %v, want express included", skillReport.Frameworks)
 	}
 }
 

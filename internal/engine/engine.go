@@ -11,13 +11,13 @@ import (
 	"sync"
 
 	"github.com/verabase/code-verification-engine/internal/analyzers"
-	"github.com/verabase/code-verification-engine/internal/claims"
-	"github.com/verabase/code-verification-engine/internal/evidencegraph"
-	"github.com/verabase/code-verification-engine/internal/facts"
 	goanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/go"
 	jsanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/js"
 	pyanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/python"
 	tsanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/ts"
+	"github.com/verabase/code-verification-engine/internal/claims"
+	"github.com/verabase/code-verification-engine/internal/evidencegraph"
+	"github.com/verabase/code-verification-engine/internal/facts"
 	"github.com/verabase/code-verification-engine/internal/git"
 	"github.com/verabase/code-verification-engine/internal/interpret"
 	"github.com/verabase/code-verification-engine/internal/repo"
@@ -39,7 +39,7 @@ type PluginAnalyzer struct {
 
 // Config holds engine execution configuration.
 type Config struct {
-	Ctx          context.Context       // caller context for cancellation/timeout
+	Ctx          context.Context // caller context for cancellation/timeout
 	RepoPath     string
 	Ref          string
 	Profile      string // built-in profile name
@@ -62,10 +62,10 @@ type Result struct {
 	Scan              report.ScanReport
 	Report            report.VerificationReport
 	Accounting        *ScanAccounting              // per-file analysis accounting
-	ClaimReport       *claims.ClaimReport              // nil if no claim set specified
-	EvidenceGraph     *evidencegraph.EvidenceGraph    // evidence relationship graph
-	InterpretedReport *interpret.InterpretedReport    // nil if interpretation disabled
-	SkillReport       *skills.Report                   // nil if mode does not include skill_inference
+	ClaimReport       *claims.ClaimReport          // nil if no claim set specified
+	EvidenceGraph     *evidencegraph.EvidenceGraph // evidence relationship graph
+	InterpretedReport *interpret.InterpretedReport // nil if interpretation disabled
+	SkillReport       *skills.Report               // nil if mode does not include skill_inference
 	Errors            []string
 }
 
@@ -545,7 +545,13 @@ func Run(cfg Config) Result {
 			return Result{ExitCode: 3, Errors: []string{fmt.Sprintf("unknown skill profile: %s", skillProfileName)}}
 		}
 
-		skillReport = skills.Evaluate(execResult.Findings, sp, cfg.RepoPath, skills.WithFactSet(factSet))
+		skillReport = skills.Evaluate(
+			execResult.Findings,
+			sp,
+			cfg.RepoPath,
+			skills.WithFactSet(factSet),
+			skills.WithLanguages(meta.Languages),
+		)
 
 		// Validate skill output contract — fail closed
 		if contractErrs := skills.ValidateReport(skillReport); len(contractErrs) > 0 {

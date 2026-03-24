@@ -27,8 +27,12 @@ func Evaluate(findings []rules.Finding, profile *Profile, repoPath string, opts 
 		SchemaVersion: SkillReportVersion,
 		RepoPath:      repoPath,
 		Profile:       profile.Name,
+		Languages:     deriveLanguages(cfg.languages),
 		Signals:       signals,
 	}
+	r.Skills = deriveSkills(signals)
+	r.Technologies = deriveTechnologies(cfg.factSet)
+	r.Frameworks = deriveFrameworks(r.Technologies)
 	r.Summary = computeSummary(signals)
 	return r
 }
@@ -193,7 +197,8 @@ func computeSummary(signals []Signal) Summary {
 
 // evalConfig holds optional configuration for Evaluate.
 type evalConfig struct {
-	factSet *rules.FactSet
+	factSet   *rules.FactSet
+	languages []string
 }
 
 // EvalOption configures the skill evaluator.
@@ -202,4 +207,9 @@ type EvalOption func(*evalConfig)
 // WithFactSet provides direct fact access for fact-to-signal mapping.
 func WithFactSet(fs *rules.FactSet) EvalOption {
 	return func(c *evalConfig) { c.factSet = fs }
+}
+
+// WithLanguages provides repository languages for simplified output.
+func WithLanguages(languages []string) EvalOption {
+	return func(c *evalConfig) { c.languages = append([]string(nil), languages...) }
 }

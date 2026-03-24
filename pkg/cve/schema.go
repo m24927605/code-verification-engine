@@ -91,10 +91,10 @@ type SkippedRuleOutput struct {
 // verification results. This prevents downstream misuse by making
 // trust boundaries explicit in the API output.
 type TrustGuidance struct {
-	CanAutomate      bool   `json:"can_automate"`       // true only if ALL findings are machine_trusted+verified
-	RequiresReview   bool   `json:"requires_review"`    // true if any advisory or human_required findings
-	DegradedAnalysis bool   `json:"degraded_analysis"`  // true if capability was degraded at runtime
-	Summary          string `json:"summary"`            // human-readable one-liner
+	CanAutomate      bool   `json:"can_automate"`      // true only if ALL findings are machine_trusted+verified
+	RequiresReview   bool   `json:"requires_review"`   // true if any advisory or human_required findings
+	DegradedAnalysis bool   `json:"degraded_analysis"` // true if capability was degraded at runtime
+	Summary          string `json:"summary"`           // human-readable one-liner
 }
 
 // CapabilitySummaryOutput is the typed public representation of the capability summary.
@@ -121,7 +121,7 @@ type ReportOutput struct {
 	Summary             ReportSummaryOutput     `json:"summary"`
 	TrustSummary        TrustSummary            `json:"trust_summary"`
 	CapabilitySummary   CapabilitySummaryOutput `json:"capability_summary"`
-	SignalSummary       SignalSummaryOutput      `json:"signal_summary"`
+	SignalSummary       SignalSummaryOutput     `json:"signal_summary"`
 	TrustGuidance       TrustGuidance           `json:"trust_guidance"`
 	Findings            []FindingOutput         `json:"findings"`
 	SkippedRules        []SkippedRuleOutput     `json:"skipped_rules,omitempty"`
@@ -132,8 +132,18 @@ type ReportOutput struct {
 type SkillOutput struct {
 	SchemaVersion string              `json:"schema_version,omitempty"`
 	Profile       string              `json:"profile,omitempty"`
+	Skills        []string            `json:"skills,omitempty"`
+	Languages     []string            `json:"languages,omitempty"`
+	Frameworks    []string            `json:"frameworks,omitempty"`
+	Technologies  []TechnologyOutput  `json:"technologies,omitempty"`
 	Signals       []SkillSignalOutput `json:"signals,omitempty"`
 	Summary       SkillSummaryOutput  `json:"summary"`
+}
+
+// TechnologyOutput is a simplified detected stack component in the public API.
+type TechnologyOutput struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
 }
 
 // SkillSignalOutput is a single skill signal in the public output.

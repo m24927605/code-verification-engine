@@ -3,6 +3,7 @@ package skills
 import (
 	"testing"
 
+	"github.com/verabase/code-verification-engine/internal/facts"
 	"github.com/verabase/code-verification-engine/internal/rules"
 )
 
@@ -33,6 +34,64 @@ func TestEvaluate_NoFindings_AllUnsupported(t *testing.T) {
 		for _, e := range errs {
 			t.Errorf("contract violation: %v", e)
 		}
+	}
+}
+
+func TestEvaluate_DerivesSimplifiedArrays(t *testing.T) {
+	findings := []rules.Finding{
+		{
+			RuleID:     "SEC-AUTH-001",
+			Status:     rules.StatusPass,
+			TrustClass: rules.TrustAdvisory,
+			Evidence:   []rules.Evidence{{File: "middleware.go", LineStart: 10, LineEnd: 20}},
+		},
+	}
+	fs := &rules.FactSet{
+		Imports: []facts.ImportFact{
+			{ImportPath: "express"},
+			{ImportPath: "react"},
+			{ImportPath: "react-router-dom"},
+			{ImportPath: "@prisma/client"},
+			{ImportPath: "express"},
+		},
+	}
+
+	r := Evaluate(findings, testProfile(), "/test", WithFactSet(fs), WithLanguages([]string{"typescript", "javascript", "typescript"}))
+
+	if len(r.Skills) != 1 || r.Skills[0] != "backend_auth.jwt_middleware" {
+		t.Fatalf("skills = %v, want [backend_auth.jwt_middleware]", r.Skills)
+	}
+	if got, want := len(r.Languages), 2; got != want {
+		t.Fatalf("languages len = %d, want %d (%v)", got, want, r.Languages)
+	}
+	if r.Languages[0] != "javascript" || r.Languages[1] != "typescript" {
+		t.Fatalf("languages = %v, want [javascript typescript]", r.Languages)
+	}
+	if got, want := len(r.Frameworks), 1; got != want {
+		t.Fatalf("frameworks len = %d, want %d (%v)", got, want, r.Frameworks)
+	}
+	if r.Frameworks[0] != "express" {
+		t.Fatalf("frameworks = %v, want [express]", r.Frameworks)
+	}
+	if len(r.Technologies) != 4 {
+		t.Fatalf("technologies = %v, want 4 entries", r.Technologies)
+	}
+	wantTech := map[string]string{
+		"express":      "framework",
+		"react":        "library",
+		"react-router": "router",
+		"prisma":       "orm",
+	}
+	for _, tech := range r.Technologies {
+		if wantKind, ok := wantTech[tech.Name]; ok {
+			if tech.Kind != wantKind {
+				t.Fatalf("technology %s kind = %s, want %s", tech.Name, tech.Kind, wantKind)
+			}
+			delete(wantTech, tech.Name)
+		}
+	}
+	if len(wantTech) != 0 {
+		t.Fatalf("missing technologies: %v", wantTech)
 	}
 }
 

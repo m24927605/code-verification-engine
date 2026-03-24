@@ -93,13 +93,23 @@ type Summary struct {
 	Unsupported int `json:"unsupported"`
 }
 
+// Technology is a simplified detected stack component.
+type Technology struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
 // Report is the top-level skill inference report written to skills.json.
 type Report struct {
-	SchemaVersion string   `json:"schema_version"`
-	RepoPath      string   `json:"repo_path"`
-	Profile       string   `json:"profile"`
-	Signals       []Signal `json:"signals"`
-	Summary       Summary  `json:"summary"`
+	SchemaVersion string       `json:"schema_version"`
+	RepoPath      string       `json:"repo_path"`
+	Profile       string       `json:"profile"`
+	Skills        []string     `json:"skills,omitempty"`
+	Languages     []string     `json:"languages,omitempty"`
+	Frameworks    []string     `json:"frameworks,omitempty"`
+	Technologies  []Technology `json:"technologies,omitempty"`
+	Signals       []Signal     `json:"signals"`
+	Summary       Summary      `json:"summary"`
 }
 
 // SignalDefinition defines a skill signal within a profile.

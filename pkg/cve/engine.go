@@ -304,6 +304,13 @@ func (e *defaultEngine) ValidateSkillProfile(name string) bool {
 
 func bridgeSkillReport(r *skills.Report) SkillOutput {
 	signals := make([]SkillSignalOutput, 0, len(r.Signals))
+	technologies := make([]TechnologyOutput, 0, len(r.Technologies))
+	for _, t := range r.Technologies {
+		technologies = append(technologies, TechnologyOutput{
+			Name: t.Name,
+			Kind: t.Kind,
+		})
+	}
 	for _, s := range r.Signals {
 		evidence := make([]EvidenceOutput, 0, len(s.Evidence))
 		for _, ev := range s.Evidence {
@@ -333,6 +340,10 @@ func bridgeSkillReport(r *skills.Report) SkillOutput {
 	return SkillOutput{
 		SchemaVersion: r.SchemaVersion,
 		Profile:       r.Profile,
+		Skills:        append([]string(nil), r.Skills...),
+		Languages:     append([]string(nil), r.Languages...),
+		Frameworks:    append([]string(nil), r.Frameworks...),
+		Technologies:  technologies,
 		Signals:       signals,
 		Summary: SkillSummaryOutput{
 			Observed:    r.Summary.Observed,

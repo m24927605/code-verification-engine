@@ -102,6 +102,13 @@ cve verify --repo ~/my-api --claims backend-security --output ./out
 
 Skill inference extracts evidence-backed skill signals from repository code. Signals use a separate contract from verification — `observed/inferred/unsupported` instead of `pass/fail/unknown`.
 
+In addition to detailed `signals[]`, the engine also emits simplified stack summaries:
+
+- `skills[]` — inferred non-unsupported skill IDs
+- `languages[]` — detected repository languages
+- `frameworks[]` — compatibility field containing only technologies classified as `framework`
+- `technologies[]` — normalized detected stack components with explicit `kind`
+
 ### Skill Profile: `github-engineer-core`
 
 | Signal ID                                 | Category        | Description                     |
@@ -124,6 +131,52 @@ Skill inference extracts evidence-backed skill signals from repository code. Sig
 - A single advisory signal cannot produce `high`-confidence `observed`
 - `human_or_runtime_required` trust cannot produce `high` confidence
 
+### `skills.json` Shape
+
+```json
+{
+  "schema_version": "1.0.0",
+  "repo_path": "/path/to/repo",
+  "profile": "github-engineer-core",
+  "skills": ["backend_auth.jwt_middleware"],
+  "languages": ["typescript"],
+  "frameworks": ["express"],
+  "technologies": [
+    { "name": "express", "kind": "framework" },
+    { "name": "react", "kind": "library" },
+    { "name": "react-router", "kind": "router" },
+    { "name": "prisma", "kind": "orm" }
+  ],
+  "signals": [
+    {
+      "id": "backend_auth.jwt_middleware",
+      "skill_id": "backend_auth.jwt_middleware",
+      "category": "implementation",
+      "status": "observed",
+      "confidence": "medium",
+      "trust_class": "advisory",
+      "evidence_strength": "heuristic",
+      "message": "Repository contains evidence of backend_auth.jwt_middleware"
+    }
+  ],
+  "summary": {
+    "observed": 1,
+    "inferred": 0,
+    "unsupported": 9
+  }
+}
+```
+
+Current `technologies[].kind` values include:
+
+- `framework`
+- `library`
+- `router`
+- `orm`
+- `database`
+- `database_driver`
+- `middleware_package`
+
 ## Output Files
 
 | File                | Mode           | Description                                    |
@@ -134,7 +187,7 @@ Skill inference extracts evidence-backed skill signals from repository code. Sig
 | `accounting.json`   | verification   | Per-file analysis accounting                    |
 | `evidence-graph.json`| verification  | Evidence relationship graph                     |
 | `claims.json`       | verification   | Claim verdicts (when `--claims` specified)      |
-| `skills.json`       | skill_inference| Skill signals, confidence, evidence             |
+| `skills.json`       | skill_inference| Skill signals plus simplified stack summaries   |
 
 ## Trust Model
 
@@ -185,6 +238,10 @@ output, err := engine.Verify(ctx, cve.VerifyInput{
 for _, s := range output.Skills.Signals {
     fmt.Printf("[%s] %s (confidence: %s, trust: %s)\n",
         s.SkillID, s.Status, s.Confidence, s.TrustClass)
+}
+
+for _, t := range output.Skills.Technologies {
+    fmt.Printf("%s (%s)\n", t.Name, t.Kind)
 }
 ```
 

@@ -21,6 +21,9 @@ func TestBridgeSkillReport_Empty(t *testing.T) {
 	if out.Profile != "test-profile" {
 		t.Errorf("expected profile test-profile, got %s", out.Profile)
 	}
+	if len(out.Skills) != 0 || len(out.Languages) != 0 || len(out.Frameworks) != 0 || len(out.Technologies) != 0 {
+		t.Errorf("expected empty simplified arrays, got skills=%v languages=%v frameworks=%v technologies=%v", out.Skills, out.Languages, out.Frameworks, out.Technologies)
+	}
 	if len(out.Signals) != 0 {
 		t.Errorf("expected 0 signals, got %d", len(out.Signals))
 	}
@@ -30,6 +33,13 @@ func TestBridgeSkillReport_WithSignals(t *testing.T) {
 	r := &skills.Report{
 		SchemaVersion: "1.0.0",
 		Profile:       "test",
+		Skills:        []string{"skill-1", "skill-2"},
+		Languages:     []string{"go", "typescript"},
+		Frameworks:    []string{"gin"},
+		Technologies: []skills.Technology{
+			{Name: "gin", Kind: "framework"},
+			{Name: "react", Kind: "library"},
+		},
 		Signals: []skills.Signal{
 			{
 				ID:               "sig-1",
@@ -62,6 +72,18 @@ func TestBridgeSkillReport_WithSignals(t *testing.T) {
 	out := bridgeSkillReport(r)
 	if len(out.Signals) != 2 {
 		t.Fatalf("expected 2 signals, got %d", len(out.Signals))
+	}
+	if len(out.Skills) != 2 || out.Skills[0] != "skill-1" || out.Skills[1] != "skill-2" {
+		t.Fatalf("skills mismatch: %v", out.Skills)
+	}
+	if len(out.Languages) != 2 || out.Languages[0] != "go" || out.Languages[1] != "typescript" {
+		t.Fatalf("languages mismatch: %v", out.Languages)
+	}
+	if len(out.Frameworks) != 1 || out.Frameworks[0] != "gin" {
+		t.Fatalf("frameworks mismatch: %v", out.Frameworks)
+	}
+	if len(out.Technologies) != 2 || out.Technologies[0].Name != "gin" || out.Technologies[0].Kind != "framework" || out.Technologies[1].Name != "react" || out.Technologies[1].Kind != "library" {
+		t.Fatalf("technologies mismatch: %v", out.Technologies)
 	}
 
 	s0 := out.Signals[0]
