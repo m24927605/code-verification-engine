@@ -1,0 +1,6 @@
+{
+  "family": "AUTH-002",
+  "scenario": "true-positive",
+  "expected_status": "flagged",
+  "trust_intent": "unguarded protected route"
+}

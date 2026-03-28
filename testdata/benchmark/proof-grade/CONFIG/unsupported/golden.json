@@ -1,0 +1,6 @@
+{
+  "family": "CONFIG",
+  "scenario": "unsupported",
+  "expected_status": "unsupported",
+  "trust_intent": "unsupported environment source"
+}

@@ -14,17 +14,22 @@ type RuleFile struct {
 
 // Rule represents a single verification rule.
 type Rule struct {
-	ID        string   `yaml:"id"`
-	Title     string   `yaml:"title"`
-	Category  string   `yaml:"category"`
-	Severity  string   `yaml:"severity"`
-	Languages []string `yaml:"languages"`
-	Type      string   `yaml:"type"`
-	Target    string   `yaml:"target"`
-	Message   string   `yaml:"message"`
-	Where            *Where       `yaml:"where,omitempty"`
-	MatcherClass     MatcherClass `yaml:"matcher_class"`
-	TrustedPassAllowed bool       `yaml:"trusted_pass_allowed,omitempty"`
+	ID                           string                 `yaml:"id"`
+	Title                        string                 `yaml:"title"`
+	Category                     string                 `yaml:"category"`
+	Severity                     string                 `yaml:"severity"`
+	Languages                    []string               `yaml:"languages"`
+	Type                         string                 `yaml:"type"`
+	Target                       string                 `yaml:"target"`
+	Message                      string                 `yaml:"message"`
+	Where                        *Where                 `yaml:"where,omitempty"`
+	MatcherClass                 MatcherClass           `yaml:"matcher_class"`
+	TrustedPassAllowed           bool                   `yaml:"trusted_pass_allowed,omitempty"`
+	MinimumProofFactQuality      FactQuality            `yaml:"minimum_proof_fact_quality,omitempty"`
+	MinimumStructuralFactQuality FactQuality            `yaml:"minimum_structural_fact_quality,omitempty"`
+	ExhaustiveNegative           bool                   `yaml:"exhaustive_negative,omitempty"`
+	ScenarioApplicability        *ScenarioApplicability `yaml:"scenario_applicability,omitempty"`
+	AcceptanceIntent             AcceptanceIntent       `yaml:"acceptance_intent,omitempty"`
 }
 
 // Where represents optional filtering constraints.
@@ -76,8 +81,8 @@ const (
 type TrustClass string
 
 const (
-	TrustMachineTrusted        TrustClass = "machine_trusted"
-	TrustAdvisory              TrustClass = "advisory"
+	TrustMachineTrusted         TrustClass = "machine_trusted"
+	TrustAdvisory               TrustClass = "advisory"
 	TrustHumanOrRuntimeRequired TrustClass = "human_or_runtime_required"
 )
 

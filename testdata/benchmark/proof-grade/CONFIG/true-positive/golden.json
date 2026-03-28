@@ -1,0 +1,6 @@
+{
+  "family": "CONFIG",
+  "scenario": "true-positive",
+  "expected_status": "flagged",
+  "trust_intent": "sensitive config exposed directly"
+}

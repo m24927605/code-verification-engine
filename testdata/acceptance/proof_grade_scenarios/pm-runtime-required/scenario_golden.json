@@ -1,0 +1,5 @@
+{
+  "fixture_id": "pm-runtime-required",
+  "require_pm_artifact": true,
+  "forbid_proof_grade_scenario_rows": true
+}

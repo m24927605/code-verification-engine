@@ -479,6 +479,14 @@ func bridgeClaimsProjection(a *artifactsv2.ClaimsProjectionArtifacts) *ClaimsPro
 func bridgeClaimRecords(in []artifactsv2.ClaimRecord) []ClaimRecordOutput {
 	out := make([]ClaimRecordOutput, 0, len(in))
 	for _, claim := range in {
+		var scenarioApplicability *ScenarioApplicabilityOutput
+		if claim.ScenarioApplicability != nil {
+			scenarioApplicability = &ScenarioApplicabilityOutput{
+				Hiring:              claim.ScenarioApplicability.Hiring,
+				OutsourceAcceptance: claim.ScenarioApplicability.OutsourceAcceptance,
+				PMAcceptance:        claim.ScenarioApplicability.PMAcceptance,
+			}
+		}
 		out = append(out, ClaimRecordOutput{
 			ClaimID:                  claim.ClaimID,
 			Title:                    claim.Title,
@@ -487,6 +495,8 @@ func bridgeClaimRecords(in []artifactsv2.ClaimRecord) []ClaimRecordOutput {
 			Status:                   claim.Status,
 			SupportLevel:             claim.SupportLevel,
 			Confidence:               claim.Confidence,
+			VerificationClass:        string(claim.VerificationClass),
+			ScenarioApplicability:    scenarioApplicability,
 			SourceOrigins:            append([]string(nil), claim.SourceOrigins...),
 			SupportingEvidenceIDs:    append([]string(nil), claim.SupportingEvidenceIDs...),
 			ContradictoryEvidenceIDs: append([]string(nil), claim.ContradictoryEvidenceIDs...),

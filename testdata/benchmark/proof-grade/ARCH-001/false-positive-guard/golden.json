@@ -1,0 +1,6 @@
+{
+  "family": "ARCH-001",
+  "scenario": "false-positive-guard",
+  "expected_status": "not-flagged",
+  "trust_intent": "dead-code guard prevents the rule from firing"
+}

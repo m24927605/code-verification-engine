@@ -785,7 +785,7 @@ func TestClaimOriginForSourceType_AllBranches(t *testing.T) {
 // --- buildClaimsProfileResumeArtifacts: nil meta ---
 
 func TestBuildClaimsProfileResumeArtifacts_NilMeta(t *testing.T) {
-	result, err := buildClaimsProfileResumeArtifacts(nil, nil, rules.ExecutionResult{}, nil)
+	result, _, err := buildClaimsProfileResumeArtifacts(nil, nil, rules.ExecutionResult{}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -880,4 +880,3 @@ func TestRunWithAgentRuntimeFailingProvider(t *testing.T) {
 		t.Errorf("unexpected exit code %d; errors: %v", result.ExitCode, result.Errors)
 	}
 }
-

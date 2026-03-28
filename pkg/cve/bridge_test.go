@@ -721,6 +721,8 @@ func TestBridgeClaimsProjection(t *testing.T) {
 					Status:                "accepted",
 					SupportLevel:          "verified",
 					Confidence:            0.93,
+					VerificationClass:     artifactsv2.VerificationStructuralInference,
+					ScenarioApplicability: &artifactsv2.ScenarioApplicability{Hiring: true, OutsourceAcceptance: true},
 					SourceOrigins:         []string{"code_inferred", "readme_extracted"},
 					SupportingEvidenceIDs: []string{"src-1", "src-2"},
 					Reason:                "code-backed by multiple sources",
@@ -763,6 +765,12 @@ func TestBridgeClaimsProjection(t *testing.T) {
 	}
 	if len(out.Claims.Claims) != 1 || out.Claims.Claims[0].ClaimID != "architecture.multi_agent_pipeline" {
 		t.Fatalf("unexpected bridged claim records: %#v", out.Claims.Claims)
+	}
+	if out.Claims.Claims[0].VerificationClass != string(artifactsv2.VerificationStructuralInference) {
+		t.Fatalf("unexpected bridged verification class: %#v", out.Claims.Claims[0].VerificationClass)
+	}
+	if out.Claims.Claims[0].ScenarioApplicability == nil || !out.Claims.Claims[0].ScenarioApplicability.Hiring {
+		t.Fatalf("expected bridged scenario applicability, got %#v", out.Claims.Claims[0].ScenarioApplicability)
 	}
 	if len(out.Profile.Highlights) != 1 || out.Profile.Highlights[0].HighlightID != "hl-1" {
 		t.Fatalf("unexpected bridged profile highlights: %#v", out.Profile.Highlights)

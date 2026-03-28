@@ -16,6 +16,9 @@ func TestCapabilityMatrix_GoSupported(t *testing.T) {
 		"secret.hardcoded_credential",
 		"secret.env_file_committed",
 		"db.direct_access_from_controller",
+		"config.env_read_call_exists",
+		"config.secret_key_sourced_from_env",
+		"config.secret_key_not_literal",
 		"layer.repository",
 		"layer.service",
 		"pattern.repository_encapsulation",
@@ -71,6 +74,9 @@ func TestCapabilityMatrix_JSMechanicallySupported(t *testing.T) {
 	targets := []string{
 		"secret.env_file_committed",
 		"secret.hardcoded_credential", // AST extracts const assignments with secret-pattern names
+		"config.env_read_call_exists",
+		"config.secret_key_sourced_from_env",
+		"config.secret_key_not_literal",
 		"dep.lockfile_present",
 		"frontend.lockfile_exists",
 	}
@@ -116,11 +122,24 @@ func TestCapabilityMatrix_PythonPartialAndUnsupported(t *testing.T) {
 		"db.direct_access_from_controller",
 		"layer.repository",
 		"layer.service",
+		"config.env_based",
 	}
 	for _, target := range partials {
 		level := m.GetSupportLevel("python", target)
 		if level != PartiallySup {
 			t.Errorf("python/%s = %v, want partially_supported", target, level)
+		}
+	}
+
+	supported := []string{
+		"config.env_read_call_exists",
+		"config.secret_key_sourced_from_env",
+		"config.secret_key_not_literal",
+	}
+	for _, target := range supported {
+		level := m.GetSupportLevel("python", target)
+		if level != Supported {
+			t.Errorf("python/%s = %v, want supported", target, level)
 		}
 	}
 

@@ -1,0 +1,6 @@
+{
+  "family": "SEC-001",
+  "scenario": "unsupported",
+  "expected_status": "unsupported",
+  "trust_intent": "input cannot be evaluated with normal proof rules"
+}

@@ -366,20 +366,30 @@ func chooseStableFingerprint(a, b string) string {
 
 func buildRuleMigrationSummary(verification VerificationSource) *RuleMigrationSummary {
 	ruleStates := make(map[string]string)
+	ruleClaimFamilies := make(map[string][]string)
 	for ruleID, metadata := range verification.RuleMetadata {
 		state := strings.TrimSpace(metadata.MigrationState)
 		if state != "" {
 			ruleStates[ruleID] = state
+		}
+		if families := migratedClaimFamiliesForRule(ruleID); len(families) > 0 {
+			ruleClaimFamilies[ruleID] = families
 		}
 	}
 	for _, finding := range verification.Findings {
 		if _, ok := ruleStates[finding.RuleID]; !ok {
 			ruleStates[finding.RuleID] = string(rules.MigrationFindingBridged)
 		}
+		if families := migratedClaimFamiliesForRule(finding.RuleID); len(families) > 0 {
+			ruleClaimFamilies[finding.RuleID] = families
+		}
 	}
 	for _, seed := range verification.IssueSeeds {
 		if _, ok := ruleStates[seed.RuleID]; !ok {
 			ruleStates[seed.RuleID] = string(rules.MigrationSeedNative)
+		}
+		if families := migratedClaimFamiliesForRule(seed.RuleID); len(families) > 0 {
+			ruleClaimFamilies[seed.RuleID] = families
 		}
 	}
 	if len(ruleStates) == 0 {
@@ -387,13 +397,17 @@ func buildRuleMigrationSummary(verification VerificationSource) *RuleMigrationSu
 	}
 
 	summary := &RuleMigrationSummary{
-		RuleStates:  make(map[string]string, len(ruleStates)),
-		RuleReasons: make(map[string]string, len(ruleStates)),
+		RuleStates:        make(map[string]string, len(ruleStates)),
+		RuleReasons:       make(map[string]string, len(ruleStates)),
+		RuleClaimFamilies: make(map[string][]string, len(ruleClaimFamilies)),
 	}
 	for ruleID, state := range ruleStates {
 		summary.RuleStates[ruleID] = state
 		if reason := strings.TrimSpace(verification.RuleMetadata[ruleID].MigrationReason); reason != "" {
 			summary.RuleReasons[ruleID] = reason
+		}
+		if families := ruleClaimFamilies[ruleID]; len(families) > 0 {
+			summary.RuleClaimFamilies[ruleID] = append([]string(nil), families...)
 		}
 		switch state {
 		case string(rules.MigrationLegacyOnly):
@@ -407,6 +421,23 @@ func buildRuleMigrationSummary(verification VerificationSource) *RuleMigrationSu
 		}
 	}
 	return summary
+}
+
+func migratedClaimFamiliesForRule(ruleID string) []string {
+	switch strings.TrimSpace(ruleID) {
+	case "SEC-001", "SEC-SECRET-001":
+		return []string{"security.hardcoded_secret_present", "security.hardcoded_secret_absent"}
+	case "AUTH-002", "SEC-AUTH-002":
+		return []string{"security.route_auth_binding"}
+	case "TEST-001", "TEST-AUTH-001":
+		return []string{"testing.auth_module_tests_present"}
+	case "ARCH-001", "ARCH-LAYER-001":
+		return []string{"architecture.controller_direct_db_access_present", "architecture.controller_direct_db_access_absent"}
+	case "SEC-SECRET-002":
+		return []string{"config.env_read_call_exists", "config.secret_key_sourced_from_env", "config.secret_key_not_literal"}
+	default:
+		return nil
+	}
 }
 
 func buildSummaryMarkdown(r ReportArtifact) string {

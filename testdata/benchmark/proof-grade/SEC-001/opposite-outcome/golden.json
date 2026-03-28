@@ -1,0 +1,6 @@
+{
+  "family": "SEC-001",
+  "scenario": "opposite-outcome",
+  "expected_status": "not-flagged",
+  "trust_intent": "benign opposite outcome"
+}

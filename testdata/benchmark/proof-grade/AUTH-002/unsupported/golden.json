@@ -1,0 +1,6 @@
+{
+  "family": "AUTH-002",
+  "scenario": "unsupported",
+  "expected_status": "unsupported",
+  "trust_intent": "untyped runtime config is outside normal support"
+}

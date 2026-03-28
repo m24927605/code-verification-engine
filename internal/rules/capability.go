@@ -21,11 +21,11 @@ const (
 // including optional per-framework support levels, extraction method info,
 // and runtime dependencies.
 type CapabilityDetail struct {
-	Level      SupportLevel              // base support level
-	Frameworks map[string]SupportLevel   // optional: per-framework override
-	Notes      string                    // human-readable note for consumers
-	ASTBacked  bool                      // true if fact extraction uses AST
-	RuntimeDep string                    // "python3", "node", "" = no runtime dep
+	Level      SupportLevel            // base support level
+	Frameworks map[string]SupportLevel // optional: per-framework override
+	Notes      string                  // human-readable note for consumers
+	ASTBacked  bool                    // true if fact extraction uses AST
+	RuntimeDep string                  // "python3", "node", "" = no runtime dep
 }
 
 // CapabilityMatrix maps (language, target) to a SupportLevel.
@@ -250,11 +250,11 @@ func (m *CapabilityMatrix) populateDetails() {
 		"auth.jwt_middleware": {
 			Level: PartiallySup,
 			Frameworks: map[string]SupportLevel{
-				"express":  PartiallySup,
-				"nestjs":   PartiallySup,
-				"fastify":  PartiallySup,
-				"koa":      PartiallySup,
-				"hapi":     Unsupported,
+				"express": PartiallySup,
+				"nestjs":  PartiallySup,
+				"fastify": PartiallySup,
+				"koa":     PartiallySup,
+				"hapi":    Unsupported,
 			},
 			ASTBacked: true,
 			Notes:     "AST middleware extraction + auth evidence scoring (binding+import); reduces false positives vs name-only matching",
@@ -262,11 +262,11 @@ func (m *CapabilityMatrix) populateDetails() {
 		"route.protected_uses_auth_middleware": {
 			Level: PartiallySup,
 			Frameworks: map[string]SupportLevel{
-				"express":  PartiallySup,
-				"nestjs":   PartiallySup,
-				"fastify":  PartiallySup,
-				"koa":      PartiallySup,
-				"hapi":     Unsupported,
+				"express": PartiallySup,
+				"nestjs":  PartiallySup,
+				"fastify": PartiallySup,
+				"koa":     PartiallySup,
+				"hapi":    Unsupported,
 			},
 			ASTBacked: true,
 			Notes:     "same-file per-route binding from app.use()/router.use()/guards; auth scoring requires binding+import for strong evidence",
@@ -279,9 +279,9 @@ func (m *CapabilityMatrix) populateDetails() {
 		"db.direct_access_from_controller": {
 			Level: PartiallySup,
 			Frameworks: map[string]SupportLevel{
-				"express":  PartiallySup,
-				"nestjs":   PartiallySup,
-				"fastify":  PartiallySup,
+				"express": PartiallySup,
+				"nestjs":  PartiallySup,
+				"fastify": PartiallySup,
 			},
 			ASTBacked: true,
 			Notes:     "CallerName enrichment from AST function spans; file-scoped handler matching with ImportsDirect check",
@@ -297,10 +297,10 @@ func (m *CapabilityMatrix) populateDetails() {
 		"auth.jwt_middleware": {
 			Level: PartiallySup,
 			Frameworks: map[string]SupportLevel{
-				"fastapi":    PartiallySup,
-				"flask":      PartiallySup,
-				"django":     PartiallySup,
-				"starlette":  Unsupported,
+				"fastapi":   PartiallySup,
+				"flask":     PartiallySup,
+				"django":    PartiallySup,
+				"starlette": Unsupported,
 			},
 			ASTBacked:  true,
 			RuntimeDep: "python3",
@@ -372,60 +372,63 @@ func (m *CapabilityMatrix) populateDetails() {
 func (m *CapabilityMatrix) populate() {
 	// --- Go ---
 	goTargets := map[string]SupportLevel{
-		"auth.jwt_middleware":                Supported,
-		"auth.api_key_validation":            Supported,
+		"auth.jwt_middleware":                  Supported,
+		"auth.api_key_validation":              Supported,
 		"route.protected_uses_auth_middleware": Supported,
-		"route.public_without_auth":          Supported,
-		"route.health_check":                 Supported,
-		"db.direct_access_from_controller":   Supported,
-		"secret.hardcoded_credential":        Supported,
-		"secret.env_file_committed":          Supported,
-		"config.env_based":                   Supported,
-		"layer.repository":                   Supported,
-		"layer.service":                      Supported,
-		"pattern.repository_encapsulation":   Supported,
-		"pattern.dto_separation":             PartiallySup,
-		"pattern.singleton_mutable_global":   Supported,
-		"security.input_validation":          PartiallySup,
-		"security.cors_configuration":        Supported,
-		"security.headers_middleware":        Supported,
-		"security.sql_injection_pattern":     Supported,
-		"security.sensitive_data_in_logs":    Supported,
-		"rate_limit.middleware":              Supported,
-		"error.global_handler":              Supported,
-		"error.panic_recovery":              Supported,
-		"logging.structured":                Supported,
-		"logging.request_logging":           Supported,
-		"lifecycle.graceful_shutdown":        Supported,
-		"module.auth_service":               Supported,
-		"module.payment_service":            Supported,
-		"architecture.dependency_injection":  PartiallySup,
-		"dep.lockfile_present":              Supported,
+		"route.public_without_auth":            Supported,
+		"route.health_check":                   Supported,
+		"db.direct_access_from_controller":     Supported,
+		"secret.hardcoded_credential":          Supported,
+		"secret.env_file_committed":            Supported,
+		"config.env_based":                     Supported,
+		"config.env_read_call_exists":          Supported,
+		"config.secret_key_sourced_from_env":   Supported,
+		"config.secret_key_not_literal":        Supported,
+		"layer.repository":                     Supported,
+		"layer.service":                        Supported,
+		"pattern.repository_encapsulation":     Supported,
+		"pattern.dto_separation":               PartiallySup,
+		"pattern.singleton_mutable_global":     Supported,
+		"security.input_validation":            PartiallySup,
+		"security.cors_configuration":          Supported,
+		"security.headers_middleware":          Supported,
+		"security.sql_injection_pattern":       Supported,
+		"security.sensitive_data_in_logs":      Supported,
+		"rate_limit.middleware":                Supported,
+		"error.global_handler":                 Supported,
+		"error.panic_recovery":                 Supported,
+		"logging.structured":                   Supported,
+		"logging.request_logging":              Supported,
+		"lifecycle.graceful_shutdown":          Supported,
+		"module.auth_service":                  Supported,
+		"module.payment_service":               Supported,
+		"architecture.dependency_injection":    PartiallySup,
+		"dep.lockfile_present":                 Supported,
 		// Frontend targets are unsupported for Go (not registered = Unsupported).
 		// GoF patterns
-		"gof.singleton":                Supported,
-		"gof.factory_method":           Supported,
-		"gof.abstract_factory":         Supported,
-		"gof.builder":                  Supported,
-		"gof.prototype":                Supported,
-		"gof.adapter":                  Supported,
-		"gof.bridge":                   Supported,
-		"gof.composite":                Supported,
-		"gof.decorator":                Supported,
-		"gof.facade":                   Supported,
-		"gof.flyweight":                Supported,
-		"gof.proxy":                    Supported,
-		"gof.chain_of_responsibility":  Supported,
-		"gof.command":                  Supported,
-		"gof.interpreter":              Supported,
-		"gof.iterator":                 Supported,
-		"gof.mediator":                 Supported,
-		"gof.memento":                  Supported,
-		"gof.observer":                 Supported,
-		"gof.state":                    Supported,
-		"gof.strategy":                 Supported,
-		"gof.template_method":          Supported,
-		"gof.visitor":                  Supported,
+		"gof.singleton":               Supported,
+		"gof.factory_method":          Supported,
+		"gof.abstract_factory":        Supported,
+		"gof.builder":                 Supported,
+		"gof.prototype":               Supported,
+		"gof.adapter":                 Supported,
+		"gof.bridge":                  Supported,
+		"gof.composite":               Supported,
+		"gof.decorator":               Supported,
+		"gof.facade":                  Supported,
+		"gof.flyweight":               Supported,
+		"gof.proxy":                   Supported,
+		"gof.chain_of_responsibility": Supported,
+		"gof.command":                 Supported,
+		"gof.interpreter":             Supported,
+		"gof.iterator":                Supported,
+		"gof.mediator":                Supported,
+		"gof.memento":                 Supported,
+		"gof.observer":                Supported,
+		"gof.state":                   Supported,
+		"gof.strategy":                Supported,
+		"gof.template_method":         Supported,
+		"gof.visitor":                 Supported,
 	}
 	for target, level := range goTargets {
 		m.set("go", target, level)
@@ -448,69 +451,72 @@ func (m *CapabilityMatrix) populate() {
 	// comments/strings but does not make the matching logic mechanically sound.
 	// All AST-backed targets remain PartiallySup with improved confidence.
 	jsTargets := map[string]SupportLevel{
-		"auth.jwt_middleware":                PartiallySup, // AST middleware + heuristic name match
-		"auth.api_key_validation":            PartiallySup, // AST middleware + heuristic name match
+		"auth.jwt_middleware":                  PartiallySup, // AST middleware + heuristic name match
+		"auth.api_key_validation":              PartiallySup, // AST middleware + heuristic name match
 		"route.protected_uses_auth_middleware": PartiallySup, // AST route+middleware, heuristic correlation
-		"route.public_without_auth":          PartiallySup, // AST route extraction, heuristic logic
-		"route.health_check":                 PartiallySup, // AST route extraction, heuristic path match
-		"db.direct_access_from_controller":   PartiallySup, // data-access still regex-only
-		"secret.hardcoded_credential":        Supported,    // AST extracts const assignments with secret names; mechanically sound
-		"secret.env_file_committed":          Supported,    // file existence — mechanically decidable
-		"config.env_based":                   PartiallySup, // AST symbol match, heuristic
-		"layer.repository":                   PartiallySup, // AST symbol match, heuristic name
-		"layer.service":                      PartiallySup, // AST symbol match, heuristic name
-		"pattern.repository_encapsulation":   PartiallySup, // data-access still regex-only
-		"pattern.dto_separation":             PartiallySup, // heuristic
-		"pattern.singleton_mutable_global":   PartiallySup, // AST symbol match, heuristic
-		"security.input_validation":          PartiallySup, // heuristic
-		"security.cors_configuration":        PartiallySup, // AST middleware, heuristic name
-		"security.headers_middleware":        PartiallySup, // AST middleware, heuristic name
-		"security.sql_injection_pattern":     PartiallySup, // regex pattern match
-		"security.sensitive_data_in_logs":    PartiallySup, // regex pattern match
-		"rate_limit.middleware":              PartiallySup, // AST middleware, heuristic name
-		"error.global_handler":              PartiallySup, // AST symbol match, heuristic
-		"logging.structured":                PartiallySup, // AST import match, heuristic
-		"logging.request_logging":           PartiallySup, // AST middleware, heuristic
-		"lifecycle.graceful_shutdown":        PartiallySup, // regex signal match
-		"module.auth_service":               PartiallySup, // AST symbol match, heuristic name
-		"module.payment_service":            PartiallySup, // AST symbol match, heuristic name
-		"architecture.dependency_injection":  PartiallySup, // heuristic
-		"dep.lockfile_present":              Supported,    // file existence — mechanically decidable
+		"route.public_without_auth":            PartiallySup, // AST route extraction, heuristic logic
+		"route.health_check":                   PartiallySup, // AST route extraction, heuristic path match
+		"db.direct_access_from_controller":     PartiallySup, // data-access still regex-only
+		"secret.hardcoded_credential":          Supported,    // AST extracts const assignments with secret names; mechanically sound
+		"secret.env_file_committed":            Supported,    // file existence — mechanically decidable
+		"config.env_based":                     PartiallySup, // AST symbol match, heuristic
+		"config.env_read_call_exists":          Supported,    // ConfigReadFact is deterministic
+		"config.secret_key_sourced_from_env":   Supported,    // ConfigReadFact is deterministic
+		"config.secret_key_not_literal":        Supported,    // ConfigReadFact is deterministic
+		"layer.repository":                     PartiallySup, // AST symbol match, heuristic name
+		"layer.service":                        PartiallySup, // AST symbol match, heuristic name
+		"pattern.repository_encapsulation":     PartiallySup, // data-access still regex-only
+		"pattern.dto_separation":               PartiallySup, // heuristic
+		"pattern.singleton_mutable_global":     PartiallySup, // AST symbol match, heuristic
+		"security.input_validation":            PartiallySup, // heuristic
+		"security.cors_configuration":          PartiallySup, // AST middleware, heuristic name
+		"security.headers_middleware":          PartiallySup, // AST middleware, heuristic name
+		"security.sql_injection_pattern":       PartiallySup, // regex pattern match
+		"security.sensitive_data_in_logs":      PartiallySup, // regex pattern match
+		"rate_limit.middleware":                PartiallySup, // AST middleware, heuristic name
+		"error.global_handler":                 PartiallySup, // AST symbol match, heuristic
+		"logging.structured":                   PartiallySup, // AST import match, heuristic
+		"logging.request_logging":              PartiallySup, // AST middleware, heuristic
+		"lifecycle.graceful_shutdown":          PartiallySup, // regex signal match
+		"module.auth_service":                  PartiallySup, // AST symbol match, heuristic name
+		"module.payment_service":               PartiallySup, // AST symbol match, heuristic name
+		"architecture.dependency_injection":    PartiallySup, // heuristic
+		"dep.lockfile_present":                 Supported,    // file existence — mechanically decidable
 		// Frontend targets for JS — AST-backed fact extraction, heuristic matching
-		"frontend.xss_dangerous_html":       PartiallySup, // AST symbol, heuristic
-		"frontend.xss_innerhtml":            PartiallySup, // AST symbol, heuristic
+		"frontend.xss_dangerous_html":        PartiallySup, // AST symbol, heuristic
+		"frontend.xss_innerhtml":             PartiallySup, // AST symbol, heuristic
 		"frontend.token_in_localstorage":     PartiallySup, // AST symbol, heuristic
 		"frontend.env_exposes_secret":        PartiallySup, // AST symbol, heuristic
 		"frontend.console_log_in_production": PartiallySup, // AST symbol, heuristic
-		"frontend.auth_guard":               PartiallySup, // AST symbol, heuristic
-		"frontend.csp_configured":           PartiallySup, // heuristic
+		"frontend.auth_guard":                PartiallySup, // AST symbol, heuristic
+		"frontend.csp_configured":            PartiallySup, // heuristic
 		"frontend.api_error_handling":        PartiallySup, // AST symbol, heuristic
 		"frontend.lockfile_exists":           Supported,    // file existence — mechanically decidable
 		"frontend.form_validation":           PartiallySup, // AST symbol, heuristic
 		// GoF patterns — AST symbol extraction, heuristic name matching
-		"gof.singleton":                PartiallySup,
-		"gof.factory_method":           PartiallySup,
-		"gof.abstract_factory":         PartiallySup,
-		"gof.builder":                  PartiallySup,
-		"gof.prototype":                PartiallySup,
-		"gof.adapter":                  PartiallySup,
-		"gof.bridge":                   PartiallySup,
-		"gof.composite":                PartiallySup,
-		"gof.decorator":                PartiallySup,
-		"gof.facade":                   PartiallySup,
-		"gof.flyweight":                PartiallySup,
-		"gof.proxy":                    PartiallySup,
-		"gof.chain_of_responsibility":  PartiallySup,
-		"gof.command":                  PartiallySup,
-		"gof.interpreter":              PartiallySup,
-		"gof.iterator":                 PartiallySup,
-		"gof.mediator":                 PartiallySup,
-		"gof.memento":                  PartiallySup,
-		"gof.observer":                 PartiallySup,
-		"gof.state":                    PartiallySup,
-		"gof.strategy":                 PartiallySup,
-		"gof.template_method":          PartiallySup,
-		"gof.visitor":                  PartiallySup,
+		"gof.singleton":               PartiallySup,
+		"gof.factory_method":          PartiallySup,
+		"gof.abstract_factory":        PartiallySup,
+		"gof.builder":                 PartiallySup,
+		"gof.prototype":               PartiallySup,
+		"gof.adapter":                 PartiallySup,
+		"gof.bridge":                  PartiallySup,
+		"gof.composite":               PartiallySup,
+		"gof.decorator":               PartiallySup,
+		"gof.facade":                  PartiallySup,
+		"gof.flyweight":               PartiallySup,
+		"gof.proxy":                   PartiallySup,
+		"gof.chain_of_responsibility": PartiallySup,
+		"gof.command":                 PartiallySup,
+		"gof.interpreter":             PartiallySup,
+		"gof.iterator":                PartiallySup,
+		"gof.mediator":                PartiallySup,
+		"gof.memento":                 PartiallySup,
+		"gof.observer":                PartiallySup,
+		"gof.state":                   PartiallySup,
+		"gof.strategy":                PartiallySup,
+		"gof.template_method":         PartiallySup,
+		"gof.visitor":                 PartiallySup,
 	}
 	for target, level := range jsTargets {
 		m.set("javascript", target, level)
@@ -543,59 +549,62 @@ func (m *CapabilityMatrix) populate() {
 	// - module.auth_service/payment_service: remain Supported (AST symbol extraction
 	//   + name convention matching is mechanically sound for module detection)
 	pyTargets := map[string]SupportLevel{
-		"auth.jwt_middleware":                PartiallySup, // AST middleware + heuristic name
-		"auth.api_key_validation":            PartiallySup, // AST middleware + heuristic name
+		"auth.jwt_middleware":                  PartiallySup, // AST middleware + heuristic name
+		"auth.api_key_validation":              PartiallySup, // AST middleware + heuristic name
 		"route.protected_uses_auth_middleware": PartiallySup, // AST route+middleware, heuristic correlation
-		"route.public_without_auth":          PartiallySup, // AST route, heuristic logic
-		"route.health_check":                 PartiallySup, // AST route, heuristic path match
-		"db.direct_access_from_controller":   PartiallySup, // AST data-access, heuristic correlation
-		"secret.hardcoded_credential":        Supported,    // AST extracts hardcoded assignments; mechanically sound
-		"secret.env_file_committed":          Supported,    // file existence — mechanically decidable
-		"config.env_based":                   PartiallySup, // AST import, heuristic
-		"layer.repository":                   PartiallySup, // AST symbol, heuristic name
-		"layer.service":                      PartiallySup, // AST symbol, heuristic name
-		"pattern.repository_encapsulation":   PartiallySup, // AST data-access, heuristic
-		"pattern.dto_separation":             Unsupported,
-		"pattern.singleton_mutable_global":   PartiallySup, // AST symbol, heuristic
-		"security.input_validation":          PartiallySup, // heuristic
-		"security.cors_configuration":        PartiallySup, // AST middleware, heuristic
-		"security.headers_middleware":        Unsupported,
-		"security.sql_injection_pattern":     PartiallySup, // regex pattern match
-		"security.sensitive_data_in_logs":    PartiallySup, // regex pattern match
-		"rate_limit.middleware":              Unsupported,
-		"error.global_handler":              PartiallySup, // AST symbol, heuristic
-		"logging.structured":                PartiallySup, // AST import, heuristic
-		"logging.request_logging":           Unsupported,
-		"lifecycle.graceful_shutdown":        Unsupported,
-		"module.auth_service":               Supported,    // AST symbol extraction, name convention
-		"module.payment_service":            Supported,    // AST symbol extraction, name convention
-		"architecture.dependency_injection":  Unsupported,
-		"dep.lockfile_present":              Supported,    // file existence — mechanically decidable
+		"route.public_without_auth":            PartiallySup, // AST route, heuristic logic
+		"route.health_check":                   PartiallySup, // AST route, heuristic path match
+		"db.direct_access_from_controller":     PartiallySup, // AST data-access, heuristic correlation
+		"secret.hardcoded_credential":          Supported,    // AST extracts hardcoded assignments; mechanically sound
+		"secret.env_file_committed":            Supported,    // file existence — mechanically decidable
+		"config.env_based":                     PartiallySup, // AST import, heuristic
+		"config.env_read_call_exists":          Supported,    // ConfigReadFact is deterministic
+		"config.secret_key_sourced_from_env":   Supported,    // ConfigReadFact is deterministic
+		"config.secret_key_not_literal":        Supported,    // ConfigReadFact is deterministic
+		"layer.repository":                     PartiallySup, // AST symbol, heuristic name
+		"layer.service":                        PartiallySup, // AST symbol, heuristic name
+		"pattern.repository_encapsulation":     PartiallySup, // AST data-access, heuristic
+		"pattern.dto_separation":               Unsupported,
+		"pattern.singleton_mutable_global":     PartiallySup, // AST symbol, heuristic
+		"security.input_validation":            PartiallySup, // heuristic
+		"security.cors_configuration":          PartiallySup, // AST middleware, heuristic
+		"security.headers_middleware":          Unsupported,
+		"security.sql_injection_pattern":       PartiallySup, // regex pattern match
+		"security.sensitive_data_in_logs":      PartiallySup, // regex pattern match
+		"rate_limit.middleware":                Unsupported,
+		"error.global_handler":                 PartiallySup, // AST symbol, heuristic
+		"logging.structured":                   PartiallySup, // AST import, heuristic
+		"logging.request_logging":              Unsupported,
+		"lifecycle.graceful_shutdown":          Unsupported,
+		"module.auth_service":                  Supported, // AST symbol extraction, name convention
+		"module.payment_service":               Supported, // AST symbol extraction, name convention
+		"architecture.dependency_injection":    Unsupported,
+		"dep.lockfile_present":                 Supported, // file existence — mechanically decidable
 		// Frontend targets unsupported for Python (not registered = Unsupported).
 		// GoF patterns — Python has limited support (AST improves symbol detection)
-		"gof.singleton":                PartiallySup,
-		"gof.factory_method":           PartiallySup,
-		"gof.abstract_factory":         PartiallySup,
-		"gof.builder":                  PartiallySup,
-		"gof.prototype":                Unsupported,
-		"gof.adapter":                  PartiallySup,
-		"gof.bridge":                   Unsupported,
-		"gof.composite":                Unsupported,
-		"gof.decorator":                Supported,
-		"gof.facade":                   PartiallySup,
-		"gof.flyweight":                Unsupported,
-		"gof.proxy":                    Unsupported,
-		"gof.chain_of_responsibility":  Unsupported,
-		"gof.command":                  PartiallySup,
-		"gof.interpreter":              Unsupported,
-		"gof.iterator":                 Supported,
-		"gof.mediator":                 Unsupported,
-		"gof.memento":                  Unsupported,
-		"gof.observer":                 PartiallySup,
-		"gof.state":                    PartiallySup,
-		"gof.strategy":                 PartiallySup,
-		"gof.template_method":          PartiallySup,
-		"gof.visitor":                  Unsupported,
+		"gof.singleton":               PartiallySup,
+		"gof.factory_method":          PartiallySup,
+		"gof.abstract_factory":        PartiallySup,
+		"gof.builder":                 PartiallySup,
+		"gof.prototype":               Unsupported,
+		"gof.adapter":                 PartiallySup,
+		"gof.bridge":                  Unsupported,
+		"gof.composite":               Unsupported,
+		"gof.decorator":               Supported,
+		"gof.facade":                  PartiallySup,
+		"gof.flyweight":               Unsupported,
+		"gof.proxy":                   Unsupported,
+		"gof.chain_of_responsibility": Unsupported,
+		"gof.command":                 PartiallySup,
+		"gof.interpreter":             Unsupported,
+		"gof.iterator":                Supported,
+		"gof.mediator":                Unsupported,
+		"gof.memento":                 Unsupported,
+		"gof.observer":                PartiallySup,
+		"gof.state":                   PartiallySup,
+		"gof.strategy":                PartiallySup,
+		"gof.template_method":         PartiallySup,
+		"gof.visitor":                 Unsupported,
 	}
 	for target, level := range pyTargets {
 		m.set("python", target, level)

@@ -1,0 +1,5 @@
+{
+  "fixture_id": "outsource-unknown-incomplete",
+  "repo_subpath": "backend",
+  "require_outsource_artifact": true
+}

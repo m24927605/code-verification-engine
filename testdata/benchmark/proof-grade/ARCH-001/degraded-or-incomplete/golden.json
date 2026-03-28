@@ -1,0 +1,6 @@
+{
+  "family": "ARCH-001",
+  "scenario": "degraded-or-incomplete",
+  "expected_status": "incomplete",
+  "trust_intent": "truncated source does not prove the rule"
+}

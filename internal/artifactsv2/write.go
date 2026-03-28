@@ -36,6 +36,7 @@ func WriteBundle(dir string, bundle *Bundle, signedBy string) error {
 	if dir == "" {
 		return fmt.Errorf("output dir is required")
 	}
+	RefreshSummaryMarkdown(bundle)
 	if err := FinalizeSignature(bundle, signedBy); err != nil {
 		return err
 	}
@@ -66,6 +67,16 @@ func WriteBundle(dir string, bundle *Bundle, signedBy string) error {
 	}
 	if bundle.ResumeInput != nil {
 		if err := writeJSON(filepath.Join(dir, "resume_input.json"), bundle.ResumeInput); err != nil {
+			return err
+		}
+	}
+	if bundle.OutsourceAcceptance != nil {
+		if err := writeJSON(filepath.Join(dir, "outsource_acceptance.json"), bundle.OutsourceAcceptance); err != nil {
+			return err
+		}
+	}
+	if bundle.PMAcceptance != nil {
+		if err := writeJSON(filepath.Join(dir, "pm_acceptance.json"), bundle.PMAcceptance); err != nil {
 			return err
 		}
 	}

@@ -1,0 +1,6 @@
+{
+  "family": "ARCH-001",
+  "scenario": "unsupported",
+  "expected_status": "unsupported",
+  "trust_intent": "build-tagged case is outside the main proof path"
+}

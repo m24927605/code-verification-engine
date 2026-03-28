@@ -1,5 +1,7 @@
 package rules
 
+import "github.com/verabase/code-verification-engine/internal/scope"
+
 // matchRule dispatches to the appropriate matcher based on rule type.
 func matchRule(rule Rule, fs *FactSet, repoLanguages []string) Finding {
 	switch rule.Type {
@@ -50,6 +52,17 @@ func hasMinimalFacts(fs *FactSet, requiredTypes []string) bool {
 			}
 		case "FileFact":
 			if len(fs.Files) == 0 {
+				return false
+			}
+		case "ConfigReadFact":
+			hasConfigRead := false
+			for _, cr := range fs.ConfigReads {
+				if !scope.IsTestOrFixturePath(cr.File) {
+					hasConfigRead = true
+					break
+				}
+			}
+			if !hasConfigRead {
 				return false
 			}
 		}

@@ -1,0 +1,6 @@
+{
+  "family": "TEST-001",
+  "scenario": "false-positive-guard",
+  "expected_status": "not-flagged",
+  "trust_intent": "explicit guard reduces false positives"
+}

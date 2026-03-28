@@ -1,0 +1,6 @@
+{
+  "family": "CONFIG",
+  "scenario": "opposite-outcome",
+  "expected_status": "not-flagged",
+  "trust_intent": "explicit non-secret opposite case"
+}

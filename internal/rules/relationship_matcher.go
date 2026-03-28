@@ -79,6 +79,7 @@ func matchProtectedRoutesUseAuth(rule Rule, fs *FactSet) Finding {
 	routesWeakOnly := 0
 	routesWithoutBinding := 0
 	totalNonPublic := 0
+	var protectedEvidence []Evidence
 
 	for _, route := range fs.Routes {
 		if !languageMatch(string(route.Language), rule.Languages) {
@@ -122,7 +123,12 @@ func matchProtectedRoutesUseAuth(rule Rule, fs *FactSet) Finding {
 
 		switch bestClass {
 		case AuthStrong:
-			// Route is protected — no evidence added.
+			protectedEvidence = append(protectedEvidence, Evidence{
+				File:      route.File,
+				LineStart: route.Span.Start,
+				LineEnd:   route.Span.End,
+				Symbol:    route.Handler,
+			})
 		case AuthWeak:
 			routesWeakOnly++
 		default:
@@ -187,10 +193,12 @@ func matchProtectedRoutesUseAuth(rule Rule, fs *FactSet) Finding {
 		finding.Status = StatusPass
 		finding.Confidence = ConfidenceMedium
 		finding.VerificationLevel = VerificationStrongInference
+		finding.Evidence = protectedEvidence
 	} else {
 		finding.Status = StatusPass
 		finding.Confidence = ConfidenceHigh
 		finding.VerificationLevel = VerificationStrongInference
+		finding.Evidence = protectedEvidence
 	}
 	return finding
 }

@@ -1,0 +1,6 @@
+{
+  "family": "SEC-001",
+  "scenario": "degraded-or-incomplete",
+  "expected_status": "incomplete",
+  "trust_intent": "partial evidence only"
+}

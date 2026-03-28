@@ -1,0 +1,6 @@
+{
+  "family": "CONFIG",
+  "scenario": "false-positive-guard",
+  "expected_status": "not-flagged",
+  "trust_intent": "guarded fallback should avoid false alarm"
+}

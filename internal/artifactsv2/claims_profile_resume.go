@@ -41,18 +41,20 @@ type ClaimRepositoryRef struct {
 // ClaimRecord is the normalized machine-readable claim record used by the
 // multi-source claims subsystem.
 type ClaimRecord struct {
-	ClaimID                  string   `json:"claim_id"`
-	Title                    string   `json:"title"`
-	Category                 string   `json:"category"`
-	ClaimType                string   `json:"claim_type"`
-	Status                   string   `json:"status"`
-	SupportLevel             string   `json:"support_level"`
-	Confidence               float64  `json:"confidence"`
-	SourceOrigins            []string `json:"source_origins"`
-	SupportingEvidenceIDs    []string `json:"supporting_evidence_ids"`
-	ContradictoryEvidenceIDs []string `json:"contradictory_evidence_ids"`
-	Reason                   string   `json:"reason"`
-	ProjectionEligible       bool     `json:"projection_eligible"`
+	ClaimID                  string                 `json:"claim_id"`
+	Title                    string                 `json:"title"`
+	Category                 string                 `json:"category"`
+	ClaimType                string                 `json:"claim_type"`
+	Status                   string                 `json:"status"`
+	SupportLevel             string                 `json:"support_level"`
+	Confidence               float64                `json:"confidence"`
+	VerificationClass        VerificationClass      `json:"verification_class,omitempty"`
+	ScenarioApplicability    *ScenarioApplicability `json:"scenario_applicability,omitempty"`
+	SourceOrigins            []string               `json:"source_origins"`
+	SupportingEvidenceIDs    []string               `json:"supporting_evidence_ids"`
+	ContradictoryEvidenceIDs []string               `json:"contradictory_evidence_ids"`
+	Reason                   string                 `json:"reason"`
+	ProjectionEligible       bool                   `json:"projection_eligible"`
 }
 
 // ClaimSummary counts support levels across a claim set.
@@ -262,7 +264,9 @@ func summarizeClaims(claims []ClaimRecord) ClaimSummary {
 func projectCapabilityProfile(repo ClaimRepositoryRef, claims []ClaimRecord, technologies []string) ProfileArtifact {
 	eligibleClaims := make([]ClaimRecord, 0, len(claims))
 	for _, claim := range claims {
-		if claim.ProjectionEligible && (claim.SupportLevel == "verified" || claim.SupportLevel == "strongly_supported" || claim.SupportLevel == "supported") {
+		if claim.ProjectionEligible &&
+			(claim.VerificationClass == "" || claim.VerificationClass == VerificationProofGrade || claim.VerificationClass == VerificationStructuralInference) &&
+			(claim.SupportLevel == "verified" || claim.SupportLevel == "strongly_supported" || claim.SupportLevel == "supported") {
 			eligibleClaims = append(eligibleClaims, claim)
 		}
 	}
@@ -288,6 +292,9 @@ func projectCapabilityProfile(repo ClaimRepositoryRef, claims []ClaimRecord, tec
 
 	areas := make(map[string][]string)
 	for _, claim := range claims {
+		if claim.VerificationClass != "" && claim.VerificationClass != VerificationProofGrade && claim.VerificationClass != VerificationStructuralInference {
+			continue
+		}
 		if claim.SupportLevel != "verified" && claim.SupportLevel != "strongly_supported" && claim.SupportLevel != "supported" {
 			continue
 		}
@@ -335,11 +342,11 @@ func projectResumeInput(profile ProfileArtifact, claims []ClaimRecord) ResumeInp
 		}
 		switch claim.SupportLevel {
 		case "verified":
-			if claim.ProjectionEligible {
+			if claim.ProjectionEligible && (claim.VerificationClass == "" || claim.VerificationClass == VerificationProofGrade || claim.VerificationClass == VerificationStructuralInference) {
 				verified = append(verified, stub)
 			}
 		case "strongly_supported":
-			if claim.ProjectionEligible {
+			if claim.ProjectionEligible && (claim.VerificationClass == "" || claim.VerificationClass == VerificationProofGrade || claim.VerificationClass == VerificationStructuralInference) {
 				strong = append(strong, stub)
 			}
 		}
@@ -446,6 +453,23 @@ func ValidateClaimsArtifact(a ClaimsArtifact) error {
 		}
 		if claim.Confidence < 0 || claim.Confidence > 1 {
 			return fmt.Errorf("claims[%d]: confidence must be normalized", i)
+		}
+		// Validate verification_class when present.
+		if claim.VerificationClass != "" && !claim.VerificationClass.IsValid() {
+			return fmt.Errorf("claims[%d]: invalid verification_class %q", i, claim.VerificationClass)
+		}
+		// Validate scenario_applicability when present: at least one scenario must be true.
+		if claim.ScenarioApplicability != nil {
+			sa := claim.ScenarioApplicability
+			if !sa.Hiring && !sa.OutsourceAcceptance && !sa.PMAcceptance {
+				return fmt.Errorf("claims[%d]: scenario_applicability must declare at least one applicable scenario", i)
+			}
+		}
+		// Cross-check: proof_grade verification requires strong support evidence.
+		if claim.VerificationClass == VerificationProofGrade {
+			if claim.SupportLevel != "verified" && claim.SupportLevel != "strongly_supported" {
+				return fmt.Errorf("claims[%d]: proof_grade verification_class requires verified or strongly_supported support_level, got %q", i, claim.SupportLevel)
+			}
 		}
 		if len(claim.SourceOrigins) == 0 {
 			return fmt.Errorf("claims[%d]: source_origins is required", i)

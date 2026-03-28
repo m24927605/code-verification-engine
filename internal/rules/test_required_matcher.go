@@ -40,6 +40,7 @@ func matchTestRequired(rule Rule, fs *FactSet, repoLanguages []string) Finding {
 		finding.Status = StatusFail
 		finding.Confidence = ConfidenceHigh
 		finding.VerificationLevel = VerificationVerified
+		finding.Evidence = evidenceForModuleFiles(moduleFiles)
 	}
 	return finding
 }
@@ -137,6 +138,22 @@ func findModuleTests(rule Rule, fs *FactSet, moduleFiles map[string]bool) []Evid
 				break
 			}
 		}
+	}
+	return evidence
+}
+
+func evidenceForModuleFiles(moduleFiles map[string]bool) []Evidence {
+	if len(moduleFiles) == 0 {
+		return nil
+	}
+	evidence := make([]Evidence, 0, len(moduleFiles))
+	for file := range moduleFiles {
+		evidence = append(evidence, Evidence{
+			File:      file,
+			LineStart: 1,
+			LineEnd:   1,
+			Symbol:    filepath.Base(file),
+		})
 	}
 	return evidence
 }

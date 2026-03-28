@@ -132,6 +132,7 @@ func TestBuildClaimsProfileResumeArtifactsFixtureFamilies(t *testing.T) {
 						Status:                "accepted",
 						SupportLevel:          "verified",
 						Confidence:            0.95,
+						VerificationClass:     VerificationStructuralInference,
 						SourceOrigins:         []string{"code_inferred"},
 						SupportingEvidenceIDs: []string{"ev-code-1"},
 						Reason:                "Code-backed architecture claim.",
@@ -146,6 +147,37 @@ func TestBuildClaimsProfileResumeArtifactsFixtureFamilies(t *testing.T) {
 				}
 				if artifacts.Profile.Highlights[0].SupportLevel != "verified" {
 					t.Fatalf("expected verified highlight, got %#v", artifacts.Profile.Highlights[0])
+				}
+			},
+		},
+		{
+			name: "heuristic_claim_excluded_from_resume_safe_projection",
+			input: ClaimsProjectionInput{
+				Repository: ClaimRepositoryRef{Path: "/repo", Commit: "abc123"},
+				Claims: []ClaimRecord{
+					{
+						ClaimID:               "testing.auth_module_tests_present",
+						Title:                 "Auth module has tests",
+						Category:              "testing",
+						ClaimType:             "testing_maturity",
+						Status:                "accepted",
+						SupportLevel:          "verified",
+						Confidence:            0.80,
+						VerificationClass:     VerificationHeuristicAdvisory,
+						SourceOrigins:         []string{"rule_inferred"},
+						SupportingEvidenceIDs: []string{"ev-1"},
+						Reason:                "weakly matched evidence",
+						ProjectionEligible:    true,
+					},
+				},
+			},
+			assertFn: func(t *testing.T, artifacts ClaimsProjectionArtifacts) {
+				t.Helper()
+				if len(artifacts.Profile.Highlights) != 0 {
+					t.Fatalf("heuristic advisory claim must not appear in highlights: %#v", artifacts.Profile.Highlights)
+				}
+				if len(artifacts.ResumeInput.VerifiedClaims) != 0 {
+					t.Fatalf("heuristic advisory claim must not appear in verified claims: %#v", artifacts.ResumeInput.VerifiedClaims)
 				}
 			},
 		},

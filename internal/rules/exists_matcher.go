@@ -57,6 +57,12 @@ func findExistsEvidenceResult(rule Rule, fs *FactSet) evidenceResult {
 		return findCORSEvidenceResult(rule, fs)
 	case "config.env_based":
 		return findEnvBasedConfigResult(rule, fs)
+	case "config.env_read_call_exists":
+		ev := findConfigEnvReadCall(rule, fs)
+		return evidenceResult{Evidence: ev, VerificationLevel: VerificationStrongInference}
+	case "config.secret_key_sourced_from_env":
+		ev := findSecretKeySourcedFromEnv(rule, fs)
+		return evidenceResult{Evidence: ev, VerificationLevel: VerificationStrongInference}
 	default:
 		ev := findExistsEvidence(rule, fs)
 		return evidenceResult{Evidence: ev, VerificationLevel: VerificationVerified}
@@ -120,6 +126,10 @@ func findExistsEvidence(rule Rule, fs *FactSet) []Evidence {
 		return findServiceLayer(rule, fs)
 	case "config.env_based":
 		return findEnvBasedConfig(rule, fs)
+	case "config.env_read_call_exists":
+		return findConfigEnvReadCall(rule, fs)
+	case "config.secret_key_sourced_from_env":
+		return findSecretKeySourcedFromEnv(rule, fs)
 	case "security.input_validation":
 		return findInputValidation(rule, fs)
 	case "security.cors_configuration":

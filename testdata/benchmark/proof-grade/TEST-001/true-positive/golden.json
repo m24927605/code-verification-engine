@@ -1,0 +1,6 @@
+{
+  "family": "TEST-001",
+  "scenario": "true-positive",
+  "expected_status": "flagged",
+  "trust_intent": "test exercises the suspicious path"
+}

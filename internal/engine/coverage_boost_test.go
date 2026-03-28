@@ -44,11 +44,11 @@ func TestCollectClaimProjectionTechnologies(t *testing.T) {
 			wantLen: 0,
 		},
 		{
-			name:    "meta with languages only",
-			meta:    &repo.RepoMetadata{Languages: []string{"go", "typescript"}},
-			skill:   nil,
-			exec:    rules.ExecutionResult{},
-			wantLen: 2,
+			name:       "meta with languages only",
+			meta:       &repo.RepoMetadata{Languages: []string{"go", "typescript"}},
+			skill:      nil,
+			exec:       rules.ExecutionResult{},
+			wantLen:    2,
 			wantSubset: []string{"go", "typescript"},
 		},
 		{
@@ -150,7 +150,7 @@ func TestBuildClaimsProfileResumeArtifacts_NilClaimSet(t *testing.T) {
 		Languages: []string{"go"},
 		Files:     []string{"main.go"},
 	}
-	result, err := buildClaimsProfileResumeArtifacts(meta, nil, rules.ExecutionResult{}, nil)
+	result, _, err := buildClaimsProfileResumeArtifacts(meta, nil, rules.ExecutionResult{}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestBuildClaimsProfileResumeArtifacts_WithSkillReport(t *testing.T) {
 		Frameworks:   []string{"gin"},
 		Technologies: []skills.Technology{{Name: "Docker"}},
 	}
-	result, err := buildClaimsProfileResumeArtifacts(meta, nil, rules.ExecutionResult{}, sr)
+	result, _, err := buildClaimsProfileResumeArtifacts(meta, nil, rules.ExecutionResult{}, nil, nil, sr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,15 +289,15 @@ func TestParseAgentResponse_TableDriven(t *testing.T) {
 		errSubstr  string
 	}{
 		{
-			name:    "empty string",
-			input:   "",
-			wantErr: true,
+			name:      "empty string",
+			input:     "",
+			wantErr:   true,
 			errSubstr: "empty_agent_response",
 		},
 		{
-			name:    "whitespace only",
-			input:   "  \n\t  ",
-			wantErr: true,
+			name:      "whitespace only",
+			input:     "  \n\t  ",
+			wantErr:   true,
 			errSubstr: "empty_agent_response",
 		},
 		{
@@ -321,9 +321,9 @@ func TestParseAgentResponse_TableDriven(t *testing.T) {
 			wantStatus: "completed",
 		},
 		{
-			name:    "invalid JSON",
-			input:   `{"status": broken}`,
-			wantErr: true,
+			name:      "invalid JSON",
+			input:     `{"status": broken}`,
+			wantErr:   true,
 			errSubstr: "parse_agent_response",
 		},
 		{
@@ -477,10 +477,10 @@ func (p *echoProvider) Complete(_ context.Context, prompt string) (string, error
 func TestRunWithAgentRuntimeRespondingProvider(t *testing.T) {
 	repoPath := createTestRepo(t, goRouterFiles())
 	result := Run(Config{
-		RepoPath:  repoPath,
-		Profile:   "backend-api",
-		OutputDir: t.TempDir(),
-		Format:    "json",
+		RepoPath:     repoPath,
+		Profile:      "backend-api",
+		OutputDir:    t.TempDir(),
+		Format:       "json",
 		AgentRuntime: true,
 		AgentProvider: &echoProvider{
 			response: `{"status": "completed", "evidence": [{"claim": "test", "summary": "ok", "file": "main.go", "start_line": 1, "end_line": 1}]}`,
@@ -629,6 +629,12 @@ func TestAdaptVerifiedClaims_TableDriven(t *testing.T) {
 						if record.ProjectionEligible != expectEligible {
 							t.Errorf("claim %s: ProjectionEligible = %v, want %v",
 								record.ClaimID, record.ProjectionEligible, expectEligible)
+						}
+						if expectEligible && record.VerificationClass == "" {
+							t.Errorf("claim %s: expected non-empty VerificationClass for eligible claim", record.ClaimID)
+						}
+						if record.ScenarioApplicability == nil {
+							t.Errorf("claim %s: expected ScenarioApplicability to be set", record.ClaimID)
 						}
 					}
 				}

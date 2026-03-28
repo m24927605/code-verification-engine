@@ -2,15 +2,17 @@ package cve
 
 // Output schema versions — stable contracts for downstream consumers.
 const (
-	ScanSchemaVersion       = "1.0.0"
-	ReportSchemaVersion     = "1.0.0"
-	ClaimSchemaVersion      = "1.0.0"
-	ReportV2SchemaVersion   = "2.0.0"
-	EvidenceV2SchemaVersion = "2.0.0"
-	SkillsV2SchemaVersion   = "2.0.0"
-	TraceV2SchemaVersion    = "2.0.0"
-	SignatureSchemaVersion  = "1.0.0"
-	APIVersion              = "1.0.0"
+	ScanSchemaVersion                = "1.0.0"
+	ReportSchemaVersion              = "1.0.0"
+	ClaimSchemaVersion               = "1.0.0"
+	ReportV2SchemaVersion            = "2.0.0"
+	EvidenceV2SchemaVersion          = "2.0.0"
+	SkillsV2SchemaVersion            = "2.0.0"
+	TraceV2SchemaVersion             = "2.0.0"
+	SignatureSchemaVersion           = "1.0.0"
+	OutsourceAcceptanceSchemaVersion = "1.0.0"
+	PMAcceptanceSchemaVersion        = "1.0.0"
+	APIVersion                       = "1.0.0"
 )
 
 // APIInfo returns engine and API version information.
@@ -266,18 +268,27 @@ type ClaimRepositoryRef struct {
 }
 
 type ClaimRecordOutput struct {
-	ClaimID                  string   `json:"claim_id"`
-	Title                    string   `json:"title"`
-	Category                 string   `json:"category"`
-	ClaimType                string   `json:"claim_type"`
-	Status                   string   `json:"status"`
-	SupportLevel             string   `json:"support_level"`
-	Confidence               float64  `json:"confidence"`
-	SourceOrigins            []string `json:"source_origins"`
-	SupportingEvidenceIDs    []string `json:"supporting_evidence_ids"`
-	ContradictoryEvidenceIDs []string `json:"contradictory_evidence_ids"`
-	Reason                   string   `json:"reason"`
-	ProjectionEligible       bool     `json:"projection_eligible"`
+	ClaimID                  string                          `json:"claim_id"`
+	Title                    string                          `json:"title"`
+	Category                 string                          `json:"category"`
+	ClaimType                string                          `json:"claim_type"`
+	Status                   string                          `json:"status"`
+	SupportLevel             string                          `json:"support_level"`
+	Confidence               float64                         `json:"confidence"`
+	VerificationClass        string                          `json:"verification_class,omitempty"`
+	ScenarioApplicability    *ScenarioApplicabilityOutput    `json:"scenario_applicability,omitempty"`
+	SourceOrigins            []string                        `json:"source_origins"`
+	SupportingEvidenceIDs    []string                        `json:"supporting_evidence_ids"`
+	ContradictoryEvidenceIDs []string                        `json:"contradictory_evidence_ids"`
+	Reason                   string                          `json:"reason"`
+	ProjectionEligible       bool                            `json:"projection_eligible"`
+}
+
+// ScenarioApplicabilityOutput declares which scenarios a claim is eligible for.
+type ScenarioApplicabilityOutput struct {
+	Hiring              bool `json:"hiring"`
+	OutsourceAcceptance bool `json:"outsource_acceptance"`
+	PMAcceptance        bool `json:"pm_acceptance"`
 }
 
 type ClaimSummaryOutput struct {
@@ -601,4 +612,87 @@ type SignatureV2Output struct {
 	BundleHash      string            `json:"bundle_hash"`
 	Signature       *string           `json:"signature"`
 	SignatureScheme *string           `json:"signature_scheme"`
+}
+
+// --- Outsource Acceptance Public Output ---
+
+// OutsourceAcceptanceOutput is the typed public representation of outsource_acceptance.json.
+type OutsourceAcceptanceOutput struct {
+	SchemaVersion     string                              `json:"schema_version"`
+	Repository        AcceptanceRepositoryOutput          `json:"repository"`
+	TraceID           string                              `json:"trace_id"`
+	AcceptanceProfile string                              `json:"acceptance_profile"`
+	Summary           OutsourceAcceptanceSummaryOutput    `json:"summary"`
+	Requirements      []OutsourceRequirementRowOutput     `json:"requirements"`
+}
+
+// AcceptanceRepositoryOutput identifies the repository snapshot in acceptance outputs.
+type AcceptanceRepositoryOutput struct {
+	Path   string `json:"path"`
+	Commit string `json:"commit"`
+}
+
+// OutsourceAcceptanceSummaryOutput counts requirement statuses in outsource acceptance.
+type OutsourceAcceptanceSummaryOutput struct {
+	Passed           int `json:"passed"`
+	Failed           int `json:"failed"`
+	Unknown          int `json:"unknown"`
+	RuntimeRequired  int `json:"runtime_required"`
+	ProofGradeRows   int `json:"proof_grade_rows"`
+	BlockingFailures int `json:"blocking_failures"`
+}
+
+// OutsourceRequirementRowOutput is a single requirement row in outsource_acceptance.json.
+type OutsourceRequirementRowOutput struct {
+	RequirementID            string   `json:"requirement_id"`
+	Title                    string   `json:"title"`
+	Category                 string   `json:"category"`
+	Status                   string   `json:"status"`
+	VerificationClass        string   `json:"verification_class"`
+	TrustClass               string   `json:"trust_class"`
+	Blocking                 bool     `json:"blocking"`
+	AcceptanceIntent         string   `json:"acceptance_intent"`
+	ClaimIDs                 []string `json:"claim_ids"`
+	SupportingEvidenceIDs    []string `json:"supporting_evidence_ids"`
+	ContradictoryEvidenceIDs []string `json:"contradictory_evidence_ids"`
+	Reason                   string   `json:"reason"`
+	UnknownReasons           []string `json:"unknown_reasons"`
+}
+
+// --- PM Acceptance Public Output ---
+
+// PMAcceptanceOutput is the typed public representation of pm_acceptance.json.
+type PMAcceptanceOutput struct {
+	SchemaVersion           string                             `json:"schema_version"`
+	Repository              AcceptanceRepositoryOutput         `json:"repository"`
+	TraceID                 string                             `json:"trace_id"`
+	AcceptanceProfile       string                             `json:"acceptance_profile"`
+	Summary                 PMAcceptanceSummaryOutput          `json:"summary"`
+	EngineeringRequirements []PMEngineeringRequirementOutput   `json:"engineering_requirements"`
+}
+
+// PMAcceptanceSummaryOutput counts engineering requirement statuses.
+type PMAcceptanceSummaryOutput struct {
+	Implemented     int `json:"implemented"`
+	Partial         int `json:"partial"`
+	Blocked         int `json:"blocked"`
+	Unknown         int `json:"unknown"`
+	RuntimeRequired int `json:"runtime_required"`
+	ProofGradeRows  int `json:"proof_grade_rows"`
+}
+
+// PMEngineeringRequirementOutput is a single engineering requirement row in pm_acceptance.json.
+type PMEngineeringRequirementOutput struct {
+	RequirementID            string   `json:"requirement_id"`
+	Title                    string   `json:"title"`
+	Category                 string   `json:"category"`
+	Status                   string   `json:"status"`
+	VerificationClass        string   `json:"verification_class"`
+	TrustClass               string   `json:"trust_class"`
+	DeliveryScope            string   `json:"delivery_scope"`
+	ClaimIDs                 []string `json:"claim_ids"`
+	SupportingEvidenceIDs    []string `json:"supporting_evidence_ids"`
+	ContradictoryEvidenceIDs []string `json:"contradictory_evidence_ids"`
+	Reason                   string   `json:"reason"`
+	FollowUpAction           string   `json:"follow_up_action"`
 }

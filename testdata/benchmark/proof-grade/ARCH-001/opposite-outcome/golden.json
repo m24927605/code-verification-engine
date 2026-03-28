@@ -1,0 +1,6 @@
+{
+  "family": "ARCH-001",
+  "scenario": "opposite-outcome",
+  "expected_status": "not-flagged",
+  "trust_intent": "allowed endpoint is the inverse case"
+}

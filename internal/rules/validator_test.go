@@ -16,11 +16,7 @@ func TestValidateValidRuleFile(t *testing.T) {
 }
 
 func TestValidateUnsupportedVersion(t *testing.T) {
-	rf, err := ParseFile(testdataPath("invalid-bad-version.yaml"))
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	err = Validate(rf)
+	_, err := ParseFile(testdataPath("invalid-bad-version.yaml"))
 	if err == nil {
 		t.Fatal("expected validation error for unsupported version")
 	}
@@ -30,22 +26,14 @@ func TestValidateUnsupportedVersion(t *testing.T) {
 }
 
 func TestValidateMissingRequiredFields(t *testing.T) {
-	rf, err := ParseFile(testdataPath("invalid-missing-fields.yaml"))
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	err = Validate(rf)
+	_, err := ParseFile(testdataPath("invalid-missing-fields.yaml"))
 	if err == nil {
 		t.Fatal("expected validation error for missing fields")
 	}
 }
 
 func TestValidateUnsupportedTarget(t *testing.T) {
-	rf, err := ParseFile(testdataPath("invalid-bad-target.yaml"))
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	err = Validate(rf)
+	_, err := ParseFile(testdataPath("invalid-bad-target.yaml"))
 	if err == nil {
 		t.Fatal("expected validation error for bad target")
 	}
@@ -55,11 +43,7 @@ func TestValidateUnsupportedTarget(t *testing.T) {
 }
 
 func TestValidateWhereConflict(t *testing.T) {
-	rf, err := ParseFile(testdataPath("invalid-where-conflict.yaml"))
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	err = Validate(rf)
+	_, err := ParseFile(testdataPath("invalid-where-conflict.yaml"))
 	if err == nil {
 		t.Fatal("expected validation error for where clause conflict")
 	}

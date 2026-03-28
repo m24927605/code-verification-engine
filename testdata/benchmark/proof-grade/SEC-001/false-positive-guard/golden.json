@@ -1,0 +1,6 @@
+{
+  "family": "SEC-001",
+  "scenario": "false-positive-guard",
+  "expected_status": "not-flagged",
+  "trust_intent": "guarded usage should suppress overreach"
+}

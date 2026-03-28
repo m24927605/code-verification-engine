@@ -58,10 +58,11 @@ func RequiredManualChecks() []ManualCheck {
 	return []ManualCheck{
 		{Name: "native-rule-migration", Description: "native rule migration fixtures across issue_native, seed_native, and finding_bridged are green"},
 		{Name: "deterministic-path", Description: "acceptance fixtures for deterministic path are green"},
+		{Name: "proof-grade-scenarios", Description: "proof-grade scenario projections preserve conservative outsourcing and PM acceptance semantics across the canonical fixture corpus with stable claim/evidence references, complete first-wave benchmark matrix coverage, and traceable legacy-rule-to-claim migration metadata"},
 		{Name: "aggregation", Description: "aggregation merge / non-merge / family boundary fixtures are green"},
 		{Name: "confidence", Description: "confidence ordering, benchmark-backed thresholds, penalties, and caps fixtures are green"},
 		{Name: "context-agent-contract", Description: "bounded context selection, planned agent contract, and executed agent runtime fixtures are green"},
-		{Name: "claims-profile-resume", Description: "claims.json, profile.json, and resume_input.json projections are green with bounded claim-to-profile-to-resume references"},
+		{Name: "claims-profile-resume", Description: "claims.json, profile.json, and resume_input.json projections are green with bounded claim-to-profile-to-resume references and resume-safe verification-class filtering"},
 		{Name: "bundle-validation", Description: "verifiable bundle artifacts validate successfully"},
 		{Name: "primary-product", Description: "issue candidate set remains the deterministic primary product"},
 	}

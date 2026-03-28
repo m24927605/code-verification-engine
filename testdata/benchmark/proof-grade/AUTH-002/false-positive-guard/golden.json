@@ -1,0 +1,6 @@
+{
+  "family": "AUTH-002",
+  "scenario": "false-positive-guard",
+  "expected_status": "not-flagged",
+  "trust_intent": "conditional access guard present"
+}

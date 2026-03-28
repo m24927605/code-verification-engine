@@ -1,0 +1,6 @@
+{
+  "family": "AUTH-002",
+  "scenario": "opposite-outcome",
+  "expected_status": "not-flagged",
+  "trust_intent": "public route should not be treated as protected"
+}

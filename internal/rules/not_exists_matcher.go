@@ -98,6 +98,8 @@ func findNotExistsEvidence(rule Rule, fs *FactSet) []Evidence {
 		return findHardcodedCredentials(rule, fs)
 	case "secret.env_file_committed":
 		return findEnvFileCommitted(rule, fs)
+	case "config.secret_key_not_literal":
+		return findSecretKeyNotLiteralEvidence(rule, fs)
 	case "security.sql_injection_pattern":
 		return findSQLInjectionPattern(rule, fs)
 	case "security.sensitive_data_in_logs":
@@ -266,10 +268,10 @@ func findDirectDBAccessFromController(rule Rule, fs *FactSet) []Evidence {
 type secretPriority int
 
 const (
-	secretPriorityTestFixture     secretPriority = 0 // test-only literal
-	secretPriorityHarmlessLabel   secretPriority = 1 // token key name, storage key
+	secretPriorityTestFixture        secretPriority = 0 // test-only literal
+	secretPriorityHarmlessLabel      secretPriority = 1 // token key name, storage key
 	secretPriorityProductionFallback secretPriority = 3 // fallback/default prod secret
-	secretPriorityRealCredential  secretPriority = 4 // likely real embedded credential
+	secretPriorityRealCredential     secretPriority = 4 // likely real embedded credential
 )
 
 func classifySecretPriority(s facts.SecretFact) (secretPriority, string) {
@@ -378,6 +380,8 @@ func hasMinimalFactsForNotExists(fs *FactSet, target string) bool {
 		return len(fs.Symbols) > 0 && len(fs.Routes) > 0
 	case "pattern.singleton_mutable_global":
 		return len(fs.Symbols) > 0
+	case "config.secret_key_not_literal":
+		return len(fs.ConfigReads) > 0
 	default:
 		return len(fs.Symbols) > 0
 	}
@@ -428,4 +432,3 @@ func analyzerCoverageForRule(fs *FactSet, ruleLanguages, repoLanguages []string)
 	}
 	return worst
 }
-

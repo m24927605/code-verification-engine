@@ -11,15 +11,17 @@ const (
 
 // Bundle is the full verifiable artifact set for a single engine run.
 type Bundle struct {
-	Report    ReportArtifact
-	Evidence  EvidenceArtifact
-	Skills    SkillsArtifact
-	Trace     TraceArtifact
-	Claims    *ClaimsArtifact
-	Profile   *ProfileArtifact
-	ResumeInput *ResumeInputArtifact
-	SummaryMD string
-	Signature SignatureArtifact
+	Report              ReportArtifact
+	Evidence            EvidenceArtifact
+	Skills              SkillsArtifact
+	Trace               TraceArtifact
+	Claims              *ClaimsArtifact
+	Profile             *ProfileArtifact
+	ResumeInput         *ResumeInputArtifact
+	OutsourceAcceptance *OutsourceAcceptanceArtifact
+	PMAcceptance        *PMAcceptanceArtifact
+	SummaryMD           string
+	Signature           SignatureArtifact
 }
 
 // ReportArtifact is the issue-centric final verification artifact.
@@ -199,24 +201,24 @@ type WeightedContribution struct {
 
 // TraceArtifact is the reproducibility and execution manifest.
 type TraceArtifact struct {
-	SchemaVersion     string                   `json:"schema_version"`
-	EngineVersion     string                   `json:"engine_version"`
-	TraceID           string                   `json:"trace_id"`
-	Repo              string                   `json:"repo"`
-	Commit            string                   `json:"commit"`
-	Timestamp         string                   `json:"timestamp"`
-	Partial           bool                     `json:"partial,omitempty"`
-	Degraded          bool                     `json:"degraded,omitempty"`
-	Errors            []string                 `json:"errors,omitempty"`
-	ScanBoundary      TraceScanBoundary        `json:"scan_boundary"`
-	MigrationSummary  *RuleMigrationSummary    `json:"migration_summary,omitempty"`
-	ConfidenceCalibration *ConfidenceCalibration `json:"confidence_calibration,omitempty"`
-	Analyzers         []AnalyzerRun            `json:"analyzers,omitempty"`
-	Rules             []RuleRun                `json:"rules,omitempty"`
-	SkippedRules      []SkippedRuleTrace       `json:"skipped_rules,omitempty"`
-	ContextSelections []ContextSelectionRecord `json:"context_selections,omitempty"`
-	Agents            []AgentRun               `json:"agents,omitempty"`
-	Derivations       []IssueDerivation        `json:"derivations,omitempty"`
+	SchemaVersion         string                   `json:"schema_version"`
+	EngineVersion         string                   `json:"engine_version"`
+	TraceID               string                   `json:"trace_id"`
+	Repo                  string                   `json:"repo"`
+	Commit                string                   `json:"commit"`
+	Timestamp             string                   `json:"timestamp"`
+	Partial               bool                     `json:"partial,omitempty"`
+	Degraded              bool                     `json:"degraded,omitempty"`
+	Errors                []string                 `json:"errors,omitempty"`
+	ScanBoundary          TraceScanBoundary        `json:"scan_boundary"`
+	MigrationSummary      *RuleMigrationSummary    `json:"migration_summary,omitempty"`
+	ConfidenceCalibration *ConfidenceCalibration   `json:"confidence_calibration,omitempty"`
+	Analyzers             []AnalyzerRun            `json:"analyzers,omitempty"`
+	Rules                 []RuleRun                `json:"rules,omitempty"`
+	SkippedRules          []SkippedRuleTrace       `json:"skipped_rules,omitempty"`
+	ContextSelections     []ContextSelectionRecord `json:"context_selections,omitempty"`
+	Agents                []AgentRun               `json:"agents,omitempty"`
+	Derivations           []IssueDerivation        `json:"derivations,omitempty"`
 }
 
 // TraceScanBoundary captures the executed scan boundary summary.
@@ -229,23 +231,24 @@ type TraceScanBoundary struct {
 // RuleMigrationSummary captures per-run progress of the native rule-to-issue
 // migration matrix.
 type RuleMigrationSummary struct {
-	LegacyOnlyCount     int               `json:"legacy_only_count"`
-	FindingBridgedCount int               `json:"finding_bridged_count"`
-	SeedNativeCount     int               `json:"seed_native_count"`
-	IssueNativeCount    int               `json:"issue_native_count"`
-	RuleStates          map[string]string `json:"rule_states,omitempty"`
-	RuleReasons         map[string]string `json:"rule_reasons,omitempty"`
+	LegacyOnlyCount     int                 `json:"legacy_only_count"`
+	FindingBridgedCount int                 `json:"finding_bridged_count"`
+	SeedNativeCount     int                 `json:"seed_native_count"`
+	IssueNativeCount    int                 `json:"issue_native_count"`
+	RuleStates          map[string]string   `json:"rule_states,omitempty"`
+	RuleReasons         map[string]string   `json:"rule_reasons,omitempty"`
+	RuleClaimFamilies   map[string][]string `json:"rule_claim_families,omitempty"`
 }
 
 // ConfidenceCalibration captures the explicit calibrated policy used to derive
 // issue confidence and trust classes for this run.
 type ConfidenceCalibration struct {
-	Version                string             `json:"version"`
-	MachineTrustedThreshold float64           `json:"machine_trusted_threshold"`
-	UnknownCap             float64            `json:"unknown_cap"`
-	AgentOnlyCap           float64            `json:"agent_only_cap"`
-	RuleFamilyBaselines    map[string]float64 `json:"rule_family_baselines,omitempty"`
-	OrderingRules          []string           `json:"ordering_rules,omitempty"`
+	Version                 string             `json:"version"`
+	MachineTrustedThreshold float64            `json:"machine_trusted_threshold"`
+	UnknownCap              float64            `json:"unknown_cap"`
+	AgentOnlyCap            float64            `json:"agent_only_cap"`
+	RuleFamilyBaselines     map[string]float64 `json:"rule_family_baselines,omitempty"`
+	OrderingRules           []string           `json:"ordering_rules,omitempty"`
 }
 
 // AnalyzerRun records analyzer execution in trace.json.
@@ -322,4 +325,175 @@ type SignatureArtifact struct {
 	BundleHash      string            `json:"bundle_hash"`
 	Signature       *string           `json:"signature"`
 	SignatureScheme *string           `json:"signature_scheme"`
+}
+
+// VerificationClass classifies the trust boundary behind a claim.
+type VerificationClass string
+
+const (
+	VerificationProofGrade             VerificationClass = "proof_grade"
+	VerificationStructuralInference    VerificationClass = "structural_inference"
+	VerificationHeuristicAdvisory      VerificationClass = "heuristic_advisory"
+	VerificationHumanOrRuntimeRequired VerificationClass = "human_or_runtime_required"
+)
+
+// ValidVerificationClasses returns all valid verification class values.
+func ValidVerificationClasses() []VerificationClass {
+	return []VerificationClass{
+		VerificationProofGrade,
+		VerificationStructuralInference,
+		VerificationHeuristicAdvisory,
+		VerificationHumanOrRuntimeRequired,
+	}
+}
+
+// IsValid returns whether the verification class is a known value.
+func (vc VerificationClass) IsValid() bool {
+	switch vc {
+	case VerificationProofGrade, VerificationStructuralInference,
+		VerificationHeuristicAdvisory, VerificationHumanOrRuntimeRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// ScenarioApplicability declares which scenarios a claim is eligible for.
+type ScenarioApplicability struct {
+	Hiring              bool `json:"hiring"`
+	OutsourceAcceptance bool `json:"outsource_acceptance"`
+	PMAcceptance        bool `json:"pm_acceptance"`
+}
+
+// AcceptanceIntent declares the type of acceptance check a rule performs.
+type AcceptanceIntent string
+
+const (
+	AcceptanceIntentExistence          AcceptanceIntent = "existence_check"
+	AcceptanceIntentBinding            AcceptanceIntent = "binding_check"
+	AcceptanceIntentBoundary           AcceptanceIntent = "boundary_check"
+	AcceptanceIntentMaturity           AcceptanceIntent = "maturity_check"
+	AcceptanceIntentNegativeExhaustive AcceptanceIntent = "negative_exhaustive_check"
+)
+
+// IsValid returns whether the acceptance intent is a known value.
+func (ai AcceptanceIntent) IsValid() bool {
+	switch ai {
+	case AcceptanceIntentExistence, AcceptanceIntentBinding,
+		AcceptanceIntentBoundary, AcceptanceIntentMaturity,
+		AcceptanceIntentNegativeExhaustive:
+		return true
+	default:
+		return false
+	}
+}
+
+// TrustClassValue represents the trust class for acceptance rows.
+type TrustClassValue string
+
+const (
+	TrustClassMachineTrusted         TrustClassValue = "machine_trusted"
+	TrustClassAdvisory               TrustClassValue = "advisory"
+	TrustClassHumanOrRuntimeRequired TrustClassValue = "human_or_runtime_required"
+)
+
+// IsValid returns whether the trust class is a known value.
+func (tc TrustClassValue) IsValid() bool {
+	switch tc {
+	case TrustClassMachineTrusted, TrustClassAdvisory, TrustClassHumanOrRuntimeRequired:
+		return true
+	default:
+		return false
+	}
+}
+
+// --- Outsource Acceptance Artifact ---
+
+// OutsourceAcceptanceSchemaVersion is the contract version for outsource_acceptance.json.
+const OutsourceAcceptanceSchemaVersion = "1.0.0"
+
+// OutsourceAcceptanceArtifact is the machine-readable contractual engineering
+// acceptance artifact for outsourced delivery review.
+type OutsourceAcceptanceArtifact struct {
+	SchemaVersion     string                     `json:"schema_version"`
+	Repository        AcceptanceRepositoryRef    `json:"repository"`
+	TraceID           string                     `json:"trace_id"`
+	AcceptanceProfile string                     `json:"acceptance_profile"`
+	Summary           OutsourceAcceptanceSummary `json:"summary"`
+	Requirements      []OutsourceRequirementRow  `json:"requirements"`
+}
+
+// AcceptanceRepositoryRef identifies the repository snapshot for acceptance artifacts.
+type AcceptanceRepositoryRef struct {
+	Path   string `json:"path"`
+	Commit string `json:"commit"`
+}
+
+// OutsourceAcceptanceSummary counts requirement statuses.
+type OutsourceAcceptanceSummary struct {
+	Passed           int `json:"passed"`
+	Failed           int `json:"failed"`
+	Unknown          int `json:"unknown"`
+	RuntimeRequired  int `json:"runtime_required"`
+	ProofGradeRows   int `json:"proof_grade_rows"`
+	BlockingFailures int `json:"blocking_failures"`
+}
+
+// OutsourceRequirementRow is a single requirement row in outsource_acceptance.json.
+type OutsourceRequirementRow struct {
+	RequirementID            string            `json:"requirement_id"`
+	Title                    string            `json:"title"`
+	Category                 string            `json:"category"`
+	Status                   string            `json:"status"`
+	VerificationClass        VerificationClass `json:"verification_class"`
+	TrustClass               TrustClassValue   `json:"trust_class"`
+	Blocking                 bool              `json:"blocking"`
+	AcceptanceIntent         AcceptanceIntent  `json:"acceptance_intent"`
+	ClaimIDs                 []string          `json:"claim_ids"`
+	SupportingEvidenceIDs    []string          `json:"supporting_evidence_ids"`
+	ContradictoryEvidenceIDs []string          `json:"contradictory_evidence_ids"`
+	Reason                   string            `json:"reason"`
+	UnknownReasons           []string          `json:"unknown_reasons"`
+}
+
+// --- PM Acceptance Artifact ---
+
+// PMAcceptanceSchemaVersion is the contract version for pm_acceptance.json.
+const PMAcceptanceSchemaVersion = "1.0.0"
+
+// PMAcceptanceArtifact is the machine-readable engineering acceptance artifact
+// for PM-facing delivery review.
+type PMAcceptanceArtifact struct {
+	SchemaVersion           string                     `json:"schema_version"`
+	Repository              AcceptanceRepositoryRef    `json:"repository"`
+	TraceID                 string                     `json:"trace_id"`
+	AcceptanceProfile       string                     `json:"acceptance_profile"`
+	Summary                 PMAcceptanceSummary        `json:"summary"`
+	EngineeringRequirements []PMEngineeringRequirement `json:"engineering_requirements"`
+}
+
+// PMAcceptanceSummary counts engineering requirement statuses.
+type PMAcceptanceSummary struct {
+	Implemented     int `json:"implemented"`
+	Partial         int `json:"partial"`
+	Blocked         int `json:"blocked"`
+	Unknown         int `json:"unknown"`
+	RuntimeRequired int `json:"runtime_required"`
+	ProofGradeRows  int `json:"proof_grade_rows"`
+}
+
+// PMEngineeringRequirement is a single engineering requirement row in pm_acceptance.json.
+type PMEngineeringRequirement struct {
+	RequirementID            string            `json:"requirement_id"`
+	Title                    string            `json:"title"`
+	Category                 string            `json:"category"`
+	Status                   string            `json:"status"`
+	VerificationClass        VerificationClass `json:"verification_class"`
+	TrustClass               TrustClassValue   `json:"trust_class"`
+	DeliveryScope            string            `json:"delivery_scope"`
+	ClaimIDs                 []string          `json:"claim_ids"`
+	SupportingEvidenceIDs    []string          `json:"supporting_evidence_ids"`
+	ContradictoryEvidenceIDs []string          `json:"contradictory_evidence_ids"`
+	Reason                   string            `json:"reason"`
+	FollowUpAction           string            `json:"follow_up_action"`
 }

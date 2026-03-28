@@ -51,13 +51,14 @@ func TestRequiredManualChecksMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	checks := RequiredManualChecks()
-	if len(checks) != 8 {
-		t.Fatalf("expected 8 manual release checks, got %d", len(checks))
+	if len(checks) != 9 {
+		t.Fatalf("expected 9 manual release checks, got %d", len(checks))
 	}
 
 	expected := []string{
 		"native-rule-migration",
 		"deterministic-path",
+		"proof-grade-scenarios",
 		"aggregation",
 		"confidence",
 		"context-agent-contract",
@@ -81,10 +82,11 @@ func TestRequiredManualChecksCoverReleaseBlockingAreas(t *testing.T) {
 	checks := RequiredManualChecks()
 	wantFragments := map[string]string{
 		"native-rule-migration":  "issue_native, seed_native, and finding_bridged",
+		"proof-grade-scenarios":  "canonical fixture corpus",
 		"aggregation":            "family boundary",
 		"confidence":             "benchmark-backed thresholds",
 		"context-agent-contract": "executed agent runtime",
-		"claims-profile-resume":  "claims.json, profile.json, and resume_input.json",
+		"claims-profile-resume":  "resume-safe verification-class filtering",
 		"bundle-validation":      "verifiable bundle artifacts",
 		"primary-product":        "deterministic primary product",
 		"deterministic-path":     "deterministic path",

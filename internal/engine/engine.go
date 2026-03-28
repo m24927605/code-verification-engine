@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -41,23 +42,25 @@ type PluginAnalyzer struct {
 
 // Config holds engine execution configuration.
 type Config struct {
-	Ctx           context.Context // caller context for cancellation/timeout
-	RepoPath      string
-	Ref           string
-	Profile       string // built-in profile name
-	OutputDir     string
-	Format        string
-	Strict        bool
-	Progress      io.Writer             // stderr for progress messages
-	Interpret     bool                  // Enable LLM interpretation layer
-	LLMProvider   interpret.LLMProvider // LLM provider (nil = skip interpretation)
-	AgentRuntime  bool                  // Enable bounded non-deterministic agent execution
-	AgentProvider interpret.LLMProvider // Agent runtime provider (nil = skip execution)
-	ClaimSet      string                // optional claim set name (alternative/complement to Profile)
-	Hooks         *ScanHooks            // optional extension hooks
-	Plugins       []PluginAnalyzer      // optional external analyzer plugins
-	Mode          string                // execution mode: verification, skill_inference, both (default: verification)
-	SkillProfile  string                // skill profile name (default: github-engineer-core)
+	Ctx                        context.Context // caller context for cancellation/timeout
+	RepoPath                   string
+	Ref                        string
+	Profile                    string // built-in profile name
+	OutputDir                  string
+	Format                     string
+	Strict                     bool
+	Progress                   io.Writer             // stderr for progress messages
+	Interpret                  bool                  // Enable LLM interpretation layer
+	LLMProvider                interpret.LLMProvider // LLM provider (nil = skip interpretation)
+	AgentRuntime               bool                  // Enable bounded non-deterministic agent execution
+	AgentProvider              interpret.LLMProvider // Agent runtime provider (nil = skip execution)
+	ClaimSet                   string                // optional claim set name (alternative/complement to Profile)
+	Hooks                      *ScanHooks            // optional extension hooks
+	Plugins                    []PluginAnalyzer      // optional external analyzer plugins
+	Mode                       string                // execution mode: verification, skill_inference, both (default: verification)
+	SkillProfile               string                // skill profile name (default: github-engineer-core)
+	OutsourceAcceptanceProfile string                // optional internal scenario projection profile
+	PMAcceptanceProfile        string                // optional internal scenario projection profile
 }
 
 // Result holds the engine execution result.
@@ -141,6 +144,9 @@ func Run(cfg Config) Result {
 	}
 
 	ruleFile := rules.ProfileToRuleFile(p)
+	if err := rules.Validate(ruleFile); err != nil {
+		return Result{ExitCode: 3, Errors: []string{fmt.Sprintf("invalid profile %q: %v", cfg.Profile, err)}}
+	}
 	fmt.Fprintf(progress, "[INFO] profile: %s (%d rules)\n", cfg.Profile, len(ruleFile.Rules))
 
 	// Hook: OnScanStart
@@ -611,18 +617,39 @@ func Run(cfg Config) Result {
 		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build verifiable bundle: %v", err)}}
 	}
 	v2Bundle := v2Build.Bundle
-	claimArtifacts, err := buildClaimsProfileResumeArtifacts(meta, claimSet, execResult, skillReport)
+	claimArtifacts, claimSourceEvidence, err := buildClaimsProfileResumeArtifacts(meta, claimSet, execResult, ruleFile, factSet, skillReport)
 	if err != nil {
 		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build claims/profile/resume artifacts: %v", err)}}
 	}
+	if claimArtifacts != nil {
+		v2Bundle.Evidence.Evidence = appendMissingEvidenceRecords(v2Bundle.Evidence.Evidence, adaptClaimSourceEvidenceRecords(
+			claimSourceEvidence,
+			scanReport.RepoName,
+			scanReport.CommitSHA,
+			scanReport.ScannedAt,
+		))
+		v2Bundle.Claims = &claimArtifacts.Claims
+		v2Bundle.Profile = &claimArtifacts.Profile
+		v2Bundle.ResumeInput = &claimArtifacts.ResumeInput
+	}
+	outsourceAcceptance, pmAcceptance, err := artifactsv2.BuildScenarioAcceptanceArtifacts(artifactsv2.ScenarioAcceptanceBuildInput{
+		RepoIdentity: scanReport.RepoName,
+		Commit:       scanReport.CommitSHA,
+		TraceID:      v2Bundle.Trace.TraceID,
+		Claims:       v2Bundle.Claims,
+		Options: artifactsv2.ScenarioBuildOptions{
+			OutsourceAcceptanceProfile: cfg.OutsourceAcceptanceProfile,
+			PMAcceptanceProfile:        cfg.PMAcceptanceProfile,
+		},
+	})
+	if err != nil {
+		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build scenario acceptance artifacts: %v", err)}}
+	}
+	v2Bundle.OutsourceAcceptance = outsourceAcceptance
+	v2Bundle.PMAcceptance = pmAcceptance
 	v2OutputDir := filepath.Join(cfg.OutputDir, "verifiable")
 	if err := artifactsv2.WriteBundle(v2OutputDir, &v2Bundle, "verabase"); err != nil {
 		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write verifiable bundle: %v", err)}}
-	}
-	if claimArtifacts != nil {
-		if err := artifactsv2.WriteClaimsProfileResumeArtifacts(v2OutputDir, *claimArtifacts); err != nil {
-			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write claims/profile/resume artifacts: %v", err)}}
-		}
 	}
 	fmt.Fprintf(progress, "[INFO] verifiable bundle written to: %s\n", v2OutputDir)
 
@@ -791,29 +818,361 @@ func languageExtensions(lang string) []string {
 	}
 }
 
-func buildClaimsProfileResumeArtifacts(meta *repo.RepoMetadata, claimSet *claims.ClaimSet, execResult rules.ExecutionResult, skillReport *skills.Report) (*artifactsv2.ClaimsProjectionArtifacts, error) {
+func buildClaimsProfileResumeArtifacts(meta *repo.RepoMetadata, claimSet *claims.ClaimSet, execResult rules.ExecutionResult, ruleFile *rules.RuleFile, fs *rules.FactSet, skillReport *skills.Report) (*artifactsv2.ClaimsProjectionArtifacts, []claimsources.SourceEvidenceRecord, error) {
 	if meta == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	descriptors := claimsources.DiscoverFromRepo(meta)
 	sourceEvidence := claimsources.ExtractFromRepo(meta, descriptors)
 	claimEvidence := adaptClaimSourceEvidence(sourceEvidence)
 	graph := claims.BuildMultiSourceClaimGraph(claimSet, claimEvidence)
 	if graph == nil || len(graph.Claims) == 0 {
-		return nil, nil
+		graph = &claims.ClaimGraph{}
+	}
+	claimRecords := adaptVerifiedClaims(graph.Claims)
+	claimRecords = append(claimRecords, buildRuleBackedScenarioClaims(execResult, ruleFile)...)
+	claimRecords = append(claimRecords, buildConfigFactClaims(fs)...)
+	if len(claimRecords) == 0 {
+		return nil, sourceEvidence, nil
 	}
 	artifacts, err := artifactsv2.BuildClaimsProfileResumeArtifacts(artifactsv2.ClaimsProjectionInput{
 		Repository: artifactsv2.ClaimRepositoryRef{
 			Path:   meta.RepoPath,
 			Commit: meta.CommitSHA,
 		},
-		Claims:       adaptVerifiedClaims(graph.Claims),
+		Claims:       claimRecords,
 		Technologies: collectClaimProjectionTechnologies(meta, skillReport, execResult),
 	})
 	if err != nil {
-		return nil, err
+		return nil, sourceEvidence, err
 	}
-	return &artifacts, nil
+	return &artifacts, sourceEvidence, nil
+}
+
+type scenarioRuleClaimSpec struct {
+	ClaimID               string
+	Title                 string
+	Category              string
+	ClaimType             string
+	ScenarioApplicability *artifactsv2.ScenarioApplicability
+	Positive              bool
+	ProjectionEligible    bool
+}
+
+func buildRuleBackedScenarioClaims(execResult rules.ExecutionResult, ruleFile *rules.RuleFile) []artifactsv2.ClaimRecord {
+	if ruleFile == nil {
+		return nil
+	}
+	ruleIndex := rules.RuleIndexFromFile(ruleFile)
+	out := make([]artifactsv2.ClaimRecord, 0)
+	for _, finding := range execResult.Findings {
+		specs := scenarioClaimSpecsForFinding(finding.RuleID)
+		if len(specs) == 0 {
+			continue
+		}
+		rule, ok := ruleIndex[finding.RuleID]
+		if !ok {
+			continue
+		}
+		for _, spec := range specs {
+			claim := buildRuleBackedScenarioClaim(rule, finding, spec)
+			if len(claim.SupportingEvidenceIDs) == 0 && len(claim.ContradictoryEvidenceIDs) == 0 {
+				continue
+			}
+			out = append(out, claim)
+		}
+	}
+	return out
+}
+
+func scenarioClaimSpecsForFinding(ruleID string) []scenarioRuleClaimSpec {
+	allScenarios := &artifactsv2.ScenarioApplicability{Hiring: true, OutsourceAcceptance: true, PMAcceptance: true}
+	switch ruleID {
+	case "SEC-001", "SEC-SECRET-001":
+		return []scenarioRuleClaimSpec{
+			{
+				ClaimID:               "security.hardcoded_secret_present",
+				Title:                 "Hardcoded secret literals are present in the repository",
+				Category:              "security",
+				ClaimType:             "implementation",
+				ScenarioApplicability: &artifactsv2.ScenarioApplicability{OutsourceAcceptance: true, PMAcceptance: true},
+				Positive:              false,
+				ProjectionEligible:    false,
+			},
+			{
+				ClaimID:               "security.hardcoded_secret_absent",
+				Title:                 "Hardcoded secret literals are absent from the scanned repository boundary",
+				Category:              "security",
+				ClaimType:             "security_maturity",
+				ScenarioApplicability: &artifactsv2.ScenarioApplicability{OutsourceAcceptance: true, PMAcceptance: true},
+				Positive:              true,
+				ProjectionEligible:    false,
+			},
+		}
+	case "TEST-001", "TEST-AUTH-001":
+		return []scenarioRuleClaimSpec{{
+			ClaimID:               "testing.auth_module_tests_present",
+			Title:                 "Authentication module has automated tests",
+			Category:              "testing",
+			ClaimType:             "testing_maturity",
+			ScenarioApplicability: allScenarios,
+			Positive:              true,
+			ProjectionEligible:    true,
+		}}
+	case "AUTH-002", "SEC-AUTH-002":
+		return []scenarioRuleClaimSpec{{
+			ClaimID:               "security.route_auth_binding",
+			Title:                 "Protected routes are bound to authentication middleware",
+			Category:              "security",
+			ClaimType:             "implementation",
+			ScenarioApplicability: allScenarios,
+			Positive:              true,
+			ProjectionEligible:    true,
+		}}
+	case "ARCH-001", "ARCH-LAYER-001":
+		return []scenarioRuleClaimSpec{
+			{
+				ClaimID:               "architecture.controller_direct_db_access_present",
+				Title:                 "Controller-layer code directly accesses the database",
+				Category:              "architecture",
+				ClaimType:             "architecture",
+				ScenarioApplicability: allScenarios,
+				Positive:              false,
+				ProjectionEligible:    false,
+			},
+			{
+				ClaimID:               "architecture.controller_direct_db_access_absent",
+				Title:                 "Controller-layer code avoids direct database access",
+				Category:              "architecture",
+				ClaimType:             "architecture",
+				ScenarioApplicability: &artifactsv2.ScenarioApplicability{OutsourceAcceptance: true, PMAcceptance: true},
+				Positive:              true,
+				ProjectionEligible:    true,
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+func buildRuleBackedScenarioClaim(rule rules.Rule, finding rules.Finding, spec scenarioRuleClaimSpec) artifactsv2.ClaimRecord {
+	status, supportLevel := scenarioClaimStatusAndSupport(finding, spec.Positive)
+	verificationClass := verificationClassFromFinding(finding, rule)
+	supportingEvidence := evidenceIDsFromFinding(finding)
+	contradictoryEvidence := []string(nil)
+	if status == "rejected" {
+		supportingEvidence, contradictoryEvidence = contradictoryEvidence, supportingEvidence
+	}
+	if status != "accepted" && verificationClass == artifactsv2.VerificationProofGrade {
+		verificationClass = artifactsv2.VerificationStructuralInference
+	}
+
+	return artifactsv2.ClaimRecord{
+		ClaimID:                  spec.ClaimID,
+		Title:                    spec.Title,
+		Category:                 spec.Category,
+		ClaimType:                spec.ClaimType,
+		Status:                   status,
+		SupportLevel:             supportLevel,
+		Confidence:               confidenceScoreFromFinding(finding),
+		VerificationClass:        verificationClass,
+		ScenarioApplicability:    spec.ScenarioApplicability,
+		SourceOrigins:            []string{string(claims.ClaimOriginRuleInferred)},
+		SupportingEvidenceIDs:    supportingEvidence,
+		ContradictoryEvidenceIDs: contradictoryEvidence,
+		Reason:                   finding.Message,
+		ProjectionEligible:       spec.ProjectionEligible && status == "accepted" && claimEligibleForResume(verificationClass, supportLevel),
+	}
+}
+
+func scenarioClaimStatusAndSupport(finding rules.Finding, positive bool) (string, string) {
+	switch finding.Status {
+	case rules.StatusUnknown:
+		return "unknown", "unsupported"
+	case rules.StatusPass:
+		if positive {
+			return "accepted", supportLevelFromFinding(finding)
+		}
+		return "rejected", rejectionSupportLevelFromFinding(finding)
+	case rules.StatusFail:
+		if positive {
+			return "rejected", rejectionSupportLevelFromFinding(finding)
+		}
+		return "accepted", supportLevelFromFinding(finding)
+	default:
+		return "unknown", "unsupported"
+	}
+}
+
+func supportLevelFromFinding(finding rules.Finding) string {
+	switch finding.VerificationLevel {
+	case rules.VerificationVerified:
+		return string(claims.ClaimSupportVerified)
+	case rules.VerificationStrongInference:
+		return string(claims.ClaimSupportStronglySupported)
+	default:
+		return string(claims.ClaimSupportWeak)
+	}
+}
+
+func rejectionSupportLevelFromFinding(finding rules.Finding) string {
+	switch finding.VerificationLevel {
+	case rules.VerificationVerified, rules.VerificationStrongInference:
+		return string(claims.ClaimSupportContradicted)
+	default:
+		return string(claims.ClaimSupportUnsupported)
+	}
+}
+
+func verificationClassFromFinding(finding rules.Finding, rule rules.Rule) artifactsv2.VerificationClass {
+	if finding.TrustClass == rules.TrustHumanOrRuntimeRequired || rule.MatcherClass == rules.MatcherAttestation {
+		return artifactsv2.VerificationHumanOrRuntimeRequired
+	}
+	if finding.VerificationLevel == rules.VerificationVerified &&
+		rule.MatcherClass == rules.MatcherProof &&
+		finding.FactQualityFloor == string(facts.QualityProof) &&
+		finding.TrustClass == rules.TrustMachineTrusted {
+		return artifactsv2.VerificationProofGrade
+	}
+	if finding.VerificationLevel == rules.VerificationVerified || finding.VerificationLevel == rules.VerificationStrongInference {
+		return artifactsv2.VerificationStructuralInference
+	}
+	return artifactsv2.VerificationHeuristicAdvisory
+}
+
+func confidenceScoreFromFinding(finding rules.Finding) float64 {
+	switch finding.Confidence {
+	case rules.ConfidenceHigh:
+		return 0.95
+	case rules.ConfidenceMedium:
+		return 0.75
+	default:
+		return 0.45
+	}
+}
+
+func evidenceIDsFromFinding(finding rules.Finding) []string {
+	if len(finding.Evidence) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(finding.Evidence))
+	for _, ev := range finding.Evidence {
+		id := strings.TrimSpace(ev.ID)
+		if id == "" {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+func claimEligibleForResume(vc artifactsv2.VerificationClass, supportLevel string) bool {
+	if supportLevel != string(claims.ClaimSupportVerified) && supportLevel != string(claims.ClaimSupportStronglySupported) {
+		return false
+	}
+	return vc == artifactsv2.VerificationProofGrade || vc == artifactsv2.VerificationStructuralInference
+}
+
+func buildConfigFactClaims(fs *rules.FactSet) []artifactsv2.ClaimRecord {
+	if fs == nil || len(fs.ConfigReads) == 0 {
+		return nil
+	}
+
+	var envEvidenceIDs []string
+	var secretEnvEvidenceIDs []string
+	var literalSecretEvidenceIDs []string
+
+	for _, cr := range fs.ConfigReads {
+		evID := artifactsv2.HashBytes([]byte("config-read:" + cr.File + ":" + cr.Key + ":" + cr.SourceKind))
+		switch strings.TrimSpace(cr.SourceKind) {
+		case "env":
+			envEvidenceIDs = append(envEvidenceIDs, evID)
+			if configKeyLooksSecret(cr.Key) {
+				secretEnvEvidenceIDs = append(secretEnvEvidenceIDs, evID)
+			}
+		case "literal":
+			if configKeyLooksSecret(cr.Key) {
+				literalSecretEvidenceIDs = append(literalSecretEvidenceIDs, evID)
+			}
+		}
+	}
+
+	out := make([]artifactsv2.ClaimRecord, 0, 3)
+	if len(envEvidenceIDs) > 0 {
+		out = append(out, artifactsv2.ClaimRecord{
+			ClaimID:               "config.env_read_call_exists",
+			Title:                 "Configuration values are read from environment sources",
+			Category:              "security",
+			ClaimType:             "implementation",
+			Status:                "accepted",
+			SupportLevel:          string(claims.ClaimSupportStronglySupported),
+			Confidence:            0.84,
+			VerificationClass:     artifactsv2.VerificationStructuralInference,
+			ScenarioApplicability: &artifactsv2.ScenarioApplicability{Hiring: true, OutsourceAcceptance: true, PMAcceptance: true},
+			SourceOrigins:         []string{string(claims.ClaimOriginRuleInferred)},
+			SupportingEvidenceIDs: dedupeStringsSorted(envEvidenceIDs),
+			Reason:                "ConfigReadFact entries show environment-backed configuration reads.",
+			ProjectionEligible:    true,
+		})
+	}
+	if len(secretEnvEvidenceIDs) > 0 {
+		out = append(out, artifactsv2.ClaimRecord{
+			ClaimID:               "config.secret_key_sourced_from_env",
+			Title:                 "Secret-like configuration keys are sourced from environment reads",
+			Category:              "security",
+			ClaimType:             "security_maturity",
+			Status:                "accepted",
+			SupportLevel:          string(claims.ClaimSupportStronglySupported),
+			Confidence:            0.82,
+			VerificationClass:     artifactsv2.VerificationStructuralInference,
+			ScenarioApplicability: &artifactsv2.ScenarioApplicability{Hiring: true, OutsourceAcceptance: true, PMAcceptance: true},
+			SourceOrigins:         []string{string(claims.ClaimOriginRuleInferred)},
+			SupportingEvidenceIDs: dedupeStringsSorted(secretEnvEvidenceIDs),
+			Reason:                "Secret-like config keys were observed with SourceKind=env.",
+			ProjectionEligible:    true,
+		})
+	}
+	if len(literalSecretEvidenceIDs) > 0 {
+		out = append(out, artifactsv2.ClaimRecord{
+			ClaimID:                  "config.secret_key_not_literal",
+			Title:                    "Secret-like configuration keys are not assigned from literals",
+			Category:                 "security",
+			ClaimType:                "security_maturity",
+			Status:                   "rejected",
+			SupportLevel:             string(claims.ClaimSupportContradicted),
+			Confidence:               0.90,
+			VerificationClass:        artifactsv2.VerificationStructuralInference,
+			ScenarioApplicability:    &artifactsv2.ScenarioApplicability{OutsourceAcceptance: true, PMAcceptance: true},
+			SourceOrigins:            []string{string(claims.ClaimOriginRuleInferred)},
+			ContradictoryEvidenceIDs: dedupeStringsSorted(literalSecretEvidenceIDs),
+			Reason:                   "Secret-like config keys were observed with SourceKind=literal.",
+			ProjectionEligible:       false,
+		})
+	} else if len(secretEnvEvidenceIDs) > 0 {
+		out = append(out, artifactsv2.ClaimRecord{
+			ClaimID:               "config.secret_key_not_literal",
+			Title:                 "Secret-like configuration keys are not assigned from literals",
+			Category:              "security",
+			ClaimType:             "security_maturity",
+			Status:                "accepted",
+			SupportLevel:          string(claims.ClaimSupportStronglySupported),
+			Confidence:            0.78,
+			VerificationClass:     artifactsv2.VerificationStructuralInference,
+			ScenarioApplicability: &artifactsv2.ScenarioApplicability{OutsourceAcceptance: true, PMAcceptance: true},
+			SourceOrigins:         []string{string(claims.ClaimOriginRuleInferred)},
+			SupportingEvidenceIDs: dedupeStringsSorted(secretEnvEvidenceIDs),
+			Reason:                "Secret-like keys were observed from env-backed reads and no literal-backed secret reads were found.",
+			ProjectionEligible:    false,
+		})
+	}
+	return out
+}
+
+func configKeyLooksSecret(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	return strings.Contains(key, "secret") || strings.Contains(key, "token") ||
+		strings.Contains(key, "api_key") || strings.Contains(key, "apikey") ||
+		strings.Contains(key, "password") || strings.Contains(key, "private_key")
 }
 
 func adaptClaimSourceEvidence(records []claimsources.SourceEvidenceRecord) []claims.SourceEvidenceRecord {
@@ -839,6 +1198,71 @@ func adaptClaimSourceEvidence(records []claimsources.SourceEvidenceRecord) []cla
 			EntityIDs:  append([]string(nil), record.EntityIDs...),
 			Metadata:   copyStringMap(record.Metadata),
 		})
+	}
+	return out
+}
+
+func adaptClaimSourceEvidenceRecords(records []claimsources.SourceEvidenceRecord, repoName, commitSHA, scannedAt string) []artifactsv2.EvidenceRecord {
+	out := make([]artifactsv2.EvidenceRecord, 0, len(records))
+	for _, record := range records {
+		locations := make([]artifactsv2.LocationRef, 0, len(record.Spans))
+		for _, span := range record.Spans {
+			locations = append(locations, artifactsv2.LocationRef{
+				RepoRelPath: record.Path,
+				StartLine:   span.StartLine,
+				EndLine:     span.EndLine,
+			})
+		}
+
+		factQuality := "heuristic"
+		switch record.SourceType {
+		case claimsources.SourceTypeCode, claimsources.SourceTypeTest, claimsources.SourceTypeEval:
+			factQuality = "structural"
+		}
+
+		out = append(out, artifactsv2.EvidenceRecord{
+			ID:              record.EvidenceID,
+			Kind:            "source_evidence",
+			Source:          "analyzer",
+			ProducerID:      "claimsources:" + record.Producer,
+			ProducerVersion: "1.0.0",
+			Repo:            repoName,
+			Commit:          commitSHA,
+			BoundaryHash:    artifactsv2.HashBytes([]byte(commitSHA + ":" + record.Path)),
+			FactQuality:     factQuality,
+			EntityIDs:       append([]string(nil), record.EntityIDs...),
+			Locations:       locations,
+			Claims:          nil,
+			Payload: map[string]any{
+				"source_type": string(record.SourceType),
+				"kind":        record.Kind,
+				"summary":     record.Summary,
+				"metadata":    record.Metadata,
+			},
+			Supports:    nil,
+			Contradicts: nil,
+			DerivedFrom: nil,
+			CreatedAt:   scannedAt,
+		})
+	}
+	return out
+}
+
+func appendMissingEvidenceRecords(base []artifactsv2.EvidenceRecord, extra []artifactsv2.EvidenceRecord) []artifactsv2.EvidenceRecord {
+	if len(extra) == 0 {
+		return base
+	}
+	seen := make(map[string]struct{}, len(base))
+	for _, record := range base {
+		seen[record.ID] = struct{}{}
+	}
+	out := append([]artifactsv2.EvidenceRecord(nil), base...)
+	for _, record := range extra {
+		if _, ok := seen[record.ID]; ok {
+			continue
+		}
+		seen[record.ID] = struct{}{}
+		out = append(out, record)
 	}
 	return out
 }
@@ -871,6 +1295,8 @@ func adaptVerifiedClaims(in []claims.VerifiedClaim) []artifactsv2.ClaimRecord {
 			Status:                   claim.Status,
 			SupportLevel:             claim.SupportLevel,
 			Confidence:               claim.Confidence,
+			VerificationClass:        inferClaimVerificationClass(claim),
+			ScenarioApplicability:    inferClaimScenarioApplicability(claim),
 			SourceOrigins:            append([]string(nil), claim.SourceOrigins...),
 			SupportingEvidenceIDs:    append([]string(nil), claim.SupportingEvidenceIDs...),
 			ContradictoryEvidenceIDs: append([]string(nil), claim.ContradictoryEvidenceIDs...),
@@ -879,6 +1305,34 @@ func adaptVerifiedClaims(in []claims.VerifiedClaim) []artifactsv2.ClaimRecord {
 		})
 	}
 	return out
+}
+
+func inferClaimVerificationClass(claim claims.VerifiedClaim) artifactsv2.VerificationClass {
+	switch claim.SupportLevel {
+	case string(claims.ClaimSupportVerified), string(claims.ClaimSupportStronglySupported):
+		return artifactsv2.VerificationStructuralInference
+	case string(claims.ClaimSupportSupported), string(claims.ClaimSupportWeak):
+		return artifactsv2.VerificationHeuristicAdvisory
+	case string(claims.ClaimSupportUnsupported), string(claims.ClaimSupportContradicted):
+		return artifactsv2.VerificationHumanOrRuntimeRequired
+	default:
+		return ""
+	}
+}
+
+func inferClaimScenarioApplicability(claim claims.VerifiedClaim) *artifactsv2.ScenarioApplicability {
+	switch strings.TrimSpace(claim.ClaimType) {
+	case "implementation", "architecture", "security_maturity", "testing_maturity":
+		return &artifactsv2.ScenarioApplicability{
+			Hiring:              true,
+			OutsourceAcceptance: true,
+			PMAcceptance:        true,
+		}
+	case "evaluation_maturity", "operational_maturity":
+		return &artifactsv2.ScenarioApplicability{Hiring: true}
+	default:
+		return &artifactsv2.ScenarioApplicability{Hiring: true}
+	}
 }
 
 func collectClaimProjectionTechnologies(meta *repo.RepoMetadata, skillReport *skills.Report, execResult rules.ExecutionResult) []string {
@@ -972,5 +1426,26 @@ func copyStringMap(in map[string]string) map[string]string {
 	for k, v := range in {
 		out[k] = v
 	}
+	return out
+}
+
+func dedupeStringsSorted(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
 	return out
 }

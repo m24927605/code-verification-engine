@@ -1,0 +1,6 @@
+{
+  "family": "TEST-001",
+  "scenario": "opposite-outcome",
+  "expected_status": "not-flagged",
+  "trust_intent": "control case should stay clean"
+}

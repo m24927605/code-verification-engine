@@ -1,0 +1,6 @@
+{
+  "family": "ARCH-001",
+  "scenario": "true-positive",
+  "expected_status": "flagged",
+  "trust_intent": "architectural rule violation"
+}

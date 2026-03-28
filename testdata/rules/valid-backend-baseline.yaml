@@ -9,6 +9,12 @@ rules:
     type: "exists"
     target: "auth.jwt_middleware"
     message: "The project must implement JWT authentication middleware."
+    minimum_structural_fact_quality: "heuristic"
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "existence_check"
   - id: "ARCH-001"
     title: "Controllers must not access database directly"
     category: "architecture"
@@ -17,6 +23,14 @@ rules:
     type: "not_exists"
     target: "db.direct_access_from_controller"
     message: "Controllers should not directly access database clients or queries."
+    minimum_proof_fact_quality: "proof"
+    minimum_structural_fact_quality: "structural"
+    exhaustive_negative: true
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "negative_exhaustive_check"
   - id: "AUTH-002"
     title: "Protected routes must use authentication middleware"
     category: "security"
@@ -25,6 +39,13 @@ rules:
     type: "relationship"
     target: "route.protected_uses_auth_middleware"
     message: "Protected routes must be bound to an authentication middleware."
+    minimum_proof_fact_quality: "proof"
+    minimum_structural_fact_quality: "structural"
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "binding_check"
   - id: "TEST-001"
     title: "Payment service must have tests"
     category: "testing"
@@ -33,6 +54,12 @@ rules:
     type: "test_required"
     target: "module.payment_service"
     message: "Payment service must have automated tests."
+    minimum_structural_fact_quality: "structural"
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "maturity_check"
   - id: "SEC-001"
     title: "Hardcoded credentials must not exist"
     category: "security"
@@ -41,3 +68,11 @@ rules:
     type: "not_exists"
     target: "secret.hardcoded_credential"
     message: "The repository must not contain hardcoded credentials."
+    minimum_proof_fact_quality: "proof"
+    minimum_structural_fact_quality: "structural"
+    exhaustive_negative: true
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "negative_exhaustive_check"

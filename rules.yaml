@@ -12,6 +12,13 @@
 #   target:    驗證目標（必須是引擎支援的 target，見下方清單）
 #   message:   人類可讀的說明
 #   where:     可選的過濾條件
+#   minimum_proof_fact_quality:    proof / structural / heuristic
+#   minimum_structural_fact_quality: proof / structural / heuristic
+#   exhaustive_negative:           僅適用於 not_exists 類型
+#   scenario_applicability:        hiring / outsource_acceptance / pm_acceptance
+#   acceptance_intent:             existence_check / binding_check /
+#                                  boundary_check / maturity_check /
+#                                  negative_exhaustive_check
 #
 # === 規則類型 ===
 #   exists        — 檢查某個能力或結構是否存在
@@ -60,6 +67,13 @@ rules:
     type: "relationship"
     target: "route.protected_uses_auth_middleware"
     message: "受保護的路由必須綁定認證 middleware。"
+    minimum_proof_fact_quality: "proof"
+    minimum_structural_fact_quality: "structural"
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "binding_check"
 
   - id: "SEC-001"
     title: "Hardcoded credentials must not exist"
@@ -69,6 +83,14 @@ rules:
     type: "not_exists"
     target: "secret.hardcoded_credential"
     message: "程式碼中不得包含硬編碼的密碼或金鑰。"
+    minimum_proof_fact_quality: "proof"
+    minimum_structural_fact_quality: "structural"
+    exhaustive_negative: true
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "negative_exhaustive_check"
 
   # ─── 架構 ───
 
@@ -80,6 +102,14 @@ rules:
     type: "not_exists"
     target: "db.direct_access_from_controller"
     message: "Controller 不應直接存取資料庫，應透過 service/repository 層。"
+    minimum_proof_fact_quality: "proof"
+    minimum_structural_fact_quality: "structural"
+    exhaustive_negative: true
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "negative_exhaustive_check"
 
   # ─── 測試 ───
 
@@ -91,6 +121,12 @@ rules:
     type: "test_required"
     target: "module.auth_service"
     message: "認證服務必須有自動化測試。"
+    minimum_structural_fact_quality: "structural"
+    scenario_applicability:
+      hiring: true
+      outsource_acceptance: true
+      pm_acceptance: true
+    acceptance_intent: "maturity_check"
 
   - id: "FEAT-001"
     title: "Make Claude Code Skills"

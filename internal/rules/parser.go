@@ -22,5 +22,8 @@ func ParseBytes(data []byte) (*RuleFile, error) {
 	if err := yaml.Unmarshal(data, &rf); err != nil {
 		return nil, fmt.Errorf("parsing rule file: %w", err)
 	}
+	if err := Validate(&rf); err != nil {
+		return nil, fmt.Errorf("validating rule file: %w", err)
+	}
 	return &rf, nil
 }

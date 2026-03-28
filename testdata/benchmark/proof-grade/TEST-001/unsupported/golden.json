@@ -1,0 +1,6 @@
+{
+  "family": "TEST-001",
+  "scenario": "unsupported",
+  "expected_status": "unsupported",
+  "trust_intent": "scenario intentionally outside supported proof scope"
+}

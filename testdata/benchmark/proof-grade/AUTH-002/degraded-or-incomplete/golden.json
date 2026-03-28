@@ -1,0 +1,6 @@
+{
+  "family": "AUTH-002",
+  "scenario": "degraded-or-incomplete",
+  "expected_status": "incomplete",
+  "trust_intent": "route evidence is partial"
+}

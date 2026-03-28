@@ -72,6 +72,20 @@ func ComputeArtifactHashes(b Bundle) (map[string]string, error) {
 		}
 		hashes["resume_input.json"] = resumeInputHash
 	}
+	if b.OutsourceAcceptance != nil {
+		h, err := HashJSON(*b.OutsourceAcceptance)
+		if err != nil {
+			return nil, fmt.Errorf("hash outsource_acceptance.json: %w", err)
+		}
+		hashes["outsource_acceptance.json"] = h
+	}
+	if b.PMAcceptance != nil {
+		h, err := HashJSON(*b.PMAcceptance)
+		if err != nil {
+			return nil, fmt.Errorf("hash pm_acceptance.json: %w", err)
+		}
+		hashes["pm_acceptance.json"] = h
+	}
 	hashes["summary.md"] = HashBytes([]byte(b.SummaryMD))
 	return hashes, nil
 }

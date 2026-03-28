@@ -1,0 +1,6 @@
+{
+  "family": "CONFIG",
+  "scenario": "degraded-or-incomplete",
+  "expected_status": "incomplete",
+  "trust_intent": "empty value is not enough evidence"
+}

@@ -1,0 +1,16 @@
+{
+  "fixture_id": "outsource-fail",
+  "require_outsource_artifact": true,
+  "required_outsource_rows": [
+    {
+      "requirement_id": "oa-sec-secret-001",
+      "status": "failed",
+      "verification_class": "structural_inference",
+      "trust_class": "advisory",
+      "require_claim_ids": [
+        "security.hardcoded_secret_present"
+      ],
+      "min_supporting_evidence": 1
+    }
+  ]
+}

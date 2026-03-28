@@ -49,6 +49,16 @@ func ValidateBundle(b Bundle) error {
 			return fmt.Errorf("resume_input: %w", err)
 		}
 	}
+	if b.OutsourceAcceptance != nil {
+		if err := ValidateOutsourceAcceptanceArtifact(*b.OutsourceAcceptance); err != nil {
+			return fmt.Errorf("outsource_acceptance: %w", err)
+		}
+	}
+	if b.PMAcceptance != nil {
+		if err := ValidatePMAcceptanceArtifact(*b.PMAcceptance); err != nil {
+			return fmt.Errorf("pm_acceptance: %w", err)
+		}
+	}
 	if b.SummaryMD == "" {
 		return fmt.Errorf("summary.md content is required")
 	}
@@ -275,6 +285,16 @@ func ValidateTrace(t TraceArtifact) error {
 				return fmt.Errorf("migration_summary.rule_reasons must not contain empty rule ids")
 			}
 		}
+		for ruleID, claimFamilies := range t.MigrationSummary.RuleClaimFamilies {
+			if ruleID == "" {
+				return fmt.Errorf("migration_summary.rule_claim_families must not contain empty rule ids")
+			}
+			for i, claimID := range claimFamilies {
+				if strings.TrimSpace(claimID) == "" {
+					return fmt.Errorf("migration_summary.rule_claim_families[%q][%d] must not be empty", ruleID, i)
+				}
+			}
+		}
 	}
 	if t.ConfidenceCalibration == nil {
 		return fmt.Errorf("confidence_calibration is required")
@@ -389,6 +409,16 @@ func validateCrossReferences(b Bundle) error {
 	if b.Evidence.Repo != repo || b.Evidence.Commit != commit || b.Skills.Repo != repo || b.Skills.Commit != commit || b.Trace.Repo != repo || b.Trace.Commit != commit {
 		return fmt.Errorf("repo or commit mismatch across artifacts")
 	}
+	if b.OutsourceAcceptance != nil {
+		if b.OutsourceAcceptance.Repository.Path != repo || b.OutsourceAcceptance.Repository.Commit != commit {
+			return fmt.Errorf("outsource_acceptance repo/commit mismatch with bundle")
+		}
+	}
+	if b.PMAcceptance != nil {
+		if b.PMAcceptance.Repository.Path != repo || b.PMAcceptance.Repository.Commit != commit {
+			return fmt.Errorf("pm_acceptance repo/commit mismatch with bundle")
+		}
+	}
 
 	evidenceIDs := make(map[string]struct{}, len(b.Evidence.Evidence))
 	for _, ev := range b.Evidence.Evidence {
@@ -469,6 +499,16 @@ func validateCrossReferences(b Bundle) error {
 			}
 		}
 	}
+	// Build claim ID index for cross-reference checks across claims, profile,
+	// resume, outsource acceptance, and PM acceptance artifacts.
+	var claimIDs map[string]struct{}
+	if b.Claims != nil {
+		claimIDs = make(map[string]struct{}, len(b.Claims.Claims))
+		for _, claim := range b.Claims.Claims {
+			claimIDs[claim.ClaimID] = struct{}{}
+		}
+	}
+
 	if b.Claims != nil && b.Profile != nil && b.ResumeInput != nil {
 		if err := validateClaimReferenceIntegrity(*b.Claims, *b.Profile, *b.ResumeInput); err != nil {
 			return err
@@ -486,6 +526,63 @@ func validateCrossReferences(b Bundle) error {
 			}
 		}
 	}
+
+	// Cross-reference outsource acceptance rows against claims.json and evidence.json.
+	if b.OutsourceAcceptance != nil {
+		if claimIDs == nil {
+			return fmt.Errorf("outsource_acceptance requires claims.json in the bundle")
+		}
+		if b.OutsourceAcceptance.TraceID != b.Trace.TraceID {
+			return fmt.Errorf("outsource_acceptance trace_id %q does not match trace %q", b.OutsourceAcceptance.TraceID, b.Trace.TraceID)
+		}
+		for i, req := range b.OutsourceAcceptance.Requirements {
+			prefix := fmt.Sprintf("outsource_acceptance.requirements[%d]", i)
+			for _, cid := range req.ClaimIDs {
+				if _, ok := claimIDs[cid]; !ok {
+					return fmt.Errorf("%s: references unknown claim id %q", prefix, cid)
+				}
+			}
+			for _, evID := range req.SupportingEvidenceIDs {
+				if _, ok := evidenceIDs[evID]; !ok {
+					return fmt.Errorf("%s: references unknown supporting evidence id %q", prefix, evID)
+				}
+			}
+			for _, evID := range req.ContradictoryEvidenceIDs {
+				if _, ok := evidenceIDs[evID]; !ok {
+					return fmt.Errorf("%s: references unknown contradictory evidence id %q", prefix, evID)
+				}
+			}
+		}
+	}
+
+	// Cross-reference PM acceptance rows against claims.json and evidence.json.
+	if b.PMAcceptance != nil {
+		if claimIDs == nil {
+			return fmt.Errorf("pm_acceptance requires claims.json in the bundle")
+		}
+		if b.PMAcceptance.TraceID != b.Trace.TraceID {
+			return fmt.Errorf("pm_acceptance trace_id %q does not match trace %q", b.PMAcceptance.TraceID, b.Trace.TraceID)
+		}
+		for i, req := range b.PMAcceptance.EngineeringRequirements {
+			prefix := fmt.Sprintf("pm_acceptance.engineering_requirements[%d]", i)
+			for _, cid := range req.ClaimIDs {
+				if _, ok := claimIDs[cid]; !ok {
+					return fmt.Errorf("%s: references unknown claim id %q", prefix, cid)
+				}
+			}
+			for _, evID := range req.SupportingEvidenceIDs {
+				if _, ok := evidenceIDs[evID]; !ok {
+					return fmt.Errorf("%s: references unknown supporting evidence id %q", prefix, evID)
+				}
+			}
+			for _, evID := range req.ContradictoryEvidenceIDs {
+				if _, ok := evidenceIDs[evID]; !ok {
+					return fmt.Errorf("%s: references unknown contradictory evidence id %q", prefix, evID)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -511,6 +608,236 @@ func validateConfidenceBreakdown(cb ConfidenceBreakdown, prefix string) error {
 		if err := validateUnitInterval(val, prefix+"."+name); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// --- Outsource Acceptance Validation ---
+
+var (
+	validOutsourceStatuses = []string{"passed", "failed", "unknown", "runtime_required"}
+	validPMStatuses        = []string{"implemented", "partial", "blocked", "unknown", "runtime_required"}
+	validDeliveryScopes    = []string{"implemented", "partial", "blocked", "unknown"}
+)
+
+// ValidateOutsourceAcceptanceArtifact validates outsource_acceptance.json content.
+func ValidateOutsourceAcceptanceArtifact(a OutsourceAcceptanceArtifact) error {
+	if a.SchemaVersion != OutsourceAcceptanceSchemaVersion {
+		return fmt.Errorf("schema_version must be %q, got %q", OutsourceAcceptanceSchemaVersion, a.SchemaVersion)
+	}
+	if a.Repository.Path == "" || a.Repository.Commit == "" {
+		return fmt.Errorf("repository.path and repository.commit are required")
+	}
+	if a.TraceID == "" {
+		return fmt.Errorf("trace_id is required")
+	}
+	if a.AcceptanceProfile == "" {
+		return fmt.Errorf("acceptance_profile is required")
+	}
+
+	// Validate requirements and reconcile summary.
+	ids := make(map[string]struct{}, len(a.Requirements))
+	var countPassed, countFailed, countUnknown, countRuntime, countProof, countBlocking int
+	for i, req := range a.Requirements {
+		if err := validateOutsourceRequirementRow(req, i); err != nil {
+			return err
+		}
+		if _, ok := ids[req.RequirementID]; ok {
+			return fmt.Errorf("requirements[%d]: duplicate requirement_id %q", i, req.RequirementID)
+		}
+		ids[req.RequirementID] = struct{}{}
+
+		switch req.Status {
+		case "passed":
+			countPassed++
+		case "failed":
+			countFailed++
+		case "unknown":
+			countUnknown++
+		case "runtime_required":
+			countRuntime++
+		}
+		if req.VerificationClass == VerificationProofGrade {
+			countProof++
+		}
+		if req.Blocking && req.Status == "failed" {
+			countBlocking++
+		}
+	}
+
+	if a.Summary.Passed != countPassed || a.Summary.Failed != countFailed ||
+		a.Summary.Unknown != countUnknown || a.Summary.RuntimeRequired != countRuntime ||
+		a.Summary.ProofGradeRows != countProof || a.Summary.BlockingFailures != countBlocking {
+		return fmt.Errorf("summary counts do not reconcile with requirements")
+	}
+	return nil
+}
+
+func validateOutsourceRequirementRow(r OutsourceRequirementRow, idx int) error {
+	prefix := fmt.Sprintf("requirements[%d]", idx)
+	if r.RequirementID == "" {
+		return fmt.Errorf("%s: requirement_id is required", prefix)
+	}
+	if r.Title == "" {
+		return fmt.Errorf("%s: title is required", prefix)
+	}
+	if r.Category == "" {
+		return fmt.Errorf("%s: category is required", prefix)
+	}
+	if !slices.Contains(validOutsourceStatuses, r.Status) {
+		return fmt.Errorf("%s: invalid status %q", prefix, r.Status)
+	}
+	if !r.VerificationClass.IsValid() {
+		return fmt.Errorf("%s: invalid verification_class %q", prefix, r.VerificationClass)
+	}
+	if !r.TrustClass.IsValid() {
+		return fmt.Errorf("%s: invalid trust_class %q", prefix, r.TrustClass)
+	}
+	if !r.AcceptanceIntent.IsValid() {
+		return fmt.Errorf("%s: invalid acceptance_intent %q", prefix, r.AcceptanceIntent)
+	}
+	if len(r.ClaimIDs) == 0 {
+		return fmt.Errorf("%s: claim_ids is required", prefix)
+	}
+	// Evidence traceability: every row must reference at least one evidence ID
+	// (supporting or contradictory) to be auditable.
+	if len(r.SupportingEvidenceIDs) == 0 && len(r.ContradictoryEvidenceIDs) == 0 {
+		return fmt.Errorf("%s: at least one supporting or contradictory evidence id is required", prefix)
+	}
+	if r.Reason == "" {
+		return fmt.Errorf("%s: reason is required", prefix)
+	}
+	// Semantic consistency: verify status/verification_class/trust_class combinations.
+	if err := validateAcceptanceTrustSemantics(r.Status, r.VerificationClass, r.TrustClass, prefix); err != nil {
+		return err
+	}
+	if r.Status == "unknown" && len(r.UnknownReasons) == 0 {
+		return fmt.Errorf("%s: unknown_reasons is required when status is unknown", prefix)
+	}
+	return nil
+}
+
+// validateAcceptanceTrustSemantics enforces that status, verification_class,
+// and trust_class form a semantically valid combination. This is shared between
+// outsource and PM validators.
+func validateAcceptanceTrustSemantics(status string, vc VerificationClass, tc TrustClassValue, prefix string) error {
+	// proof_grade is the only class that may pair with machine_trusted.
+	if tc == TrustClassMachineTrusted && vc != VerificationProofGrade {
+		return fmt.Errorf("%s: trust_class=machine_trusted requires verification_class=proof_grade", prefix)
+	}
+	// Proof-grade definitive outcomes (passed/failed/implemented/blocked) require machine_trusted.
+	isDefinitive := status == "passed" || status == "failed" || status == "implemented" || status == "blocked"
+	if vc == VerificationProofGrade && isDefinitive && tc != TrustClassMachineTrusted {
+		return fmt.Errorf("%s: proof_grade %s row must have trust_class=machine_trusted", prefix, status)
+	}
+	// machine_trusted is only valid for definitive outcomes, never for unknown or runtime_required.
+	if tc == TrustClassMachineTrusted && (status == "unknown" || status == "runtime_required") {
+		return fmt.Errorf("%s: trust_class=machine_trusted is incompatible with status=%s", prefix, status)
+	}
+	// human_or_runtime_required verification class must not pair with machine_trusted.
+	if vc == VerificationHumanOrRuntimeRequired && tc == TrustClassMachineTrusted {
+		return fmt.Errorf("%s: human_or_runtime_required verification cannot be machine_trusted", prefix)
+	}
+	// runtime_required status must not claim proof_grade verification.
+	if status == "runtime_required" && vc == VerificationProofGrade {
+		return fmt.Errorf("%s: runtime_required status is incompatible with proof_grade verification", prefix)
+	}
+	// unknown status must not claim proof_grade verification.
+	if status == "unknown" && vc == VerificationProofGrade {
+		return fmt.Errorf("%s: unknown status is incompatible with proof_grade verification", prefix)
+	}
+	return nil
+}
+
+// --- PM Acceptance Validation ---
+
+// ValidatePMAcceptanceArtifact validates pm_acceptance.json content.
+func ValidatePMAcceptanceArtifact(a PMAcceptanceArtifact) error {
+	if a.SchemaVersion != PMAcceptanceSchemaVersion {
+		return fmt.Errorf("schema_version must be %q, got %q", PMAcceptanceSchemaVersion, a.SchemaVersion)
+	}
+	if a.Repository.Path == "" || a.Repository.Commit == "" {
+		return fmt.Errorf("repository.path and repository.commit are required")
+	}
+	if a.TraceID == "" {
+		return fmt.Errorf("trace_id is required")
+	}
+	if a.AcceptanceProfile == "" {
+		return fmt.Errorf("acceptance_profile is required")
+	}
+
+	ids := make(map[string]struct{}, len(a.EngineeringRequirements))
+	var countImpl, countPartial, countBlocked, countUnknown, countRuntime, countProof int
+	for i, req := range a.EngineeringRequirements {
+		if err := validatePMEngineeringRequirement(req, i); err != nil {
+			return err
+		}
+		if _, ok := ids[req.RequirementID]; ok {
+			return fmt.Errorf("engineering_requirements[%d]: duplicate requirement_id %q", i, req.RequirementID)
+		}
+		ids[req.RequirementID] = struct{}{}
+
+		switch req.Status {
+		case "implemented":
+			countImpl++
+		case "partial":
+			countPartial++
+		case "blocked":
+			countBlocked++
+		case "unknown":
+			countUnknown++
+		case "runtime_required":
+			countRuntime++
+		}
+		if req.VerificationClass == VerificationProofGrade {
+			countProof++
+		}
+	}
+
+	if a.Summary.Implemented != countImpl || a.Summary.Partial != countPartial ||
+		a.Summary.Blocked != countBlocked || a.Summary.Unknown != countUnknown ||
+		a.Summary.RuntimeRequired != countRuntime || a.Summary.ProofGradeRows != countProof {
+		return fmt.Errorf("summary counts do not reconcile with engineering_requirements")
+	}
+	return nil
+}
+
+func validatePMEngineeringRequirement(r PMEngineeringRequirement, idx int) error {
+	prefix := fmt.Sprintf("engineering_requirements[%d]", idx)
+	if r.RequirementID == "" {
+		return fmt.Errorf("%s: requirement_id is required", prefix)
+	}
+	if r.Title == "" {
+		return fmt.Errorf("%s: title is required", prefix)
+	}
+	if r.Category == "" {
+		return fmt.Errorf("%s: category is required", prefix)
+	}
+	if !slices.Contains(validPMStatuses, r.Status) {
+		return fmt.Errorf("%s: invalid status %q", prefix, r.Status)
+	}
+	if !r.VerificationClass.IsValid() {
+		return fmt.Errorf("%s: invalid verification_class %q", prefix, r.VerificationClass)
+	}
+	if !r.TrustClass.IsValid() {
+		return fmt.Errorf("%s: invalid trust_class %q", prefix, r.TrustClass)
+	}
+	if !slices.Contains(validDeliveryScopes, r.DeliveryScope) {
+		return fmt.Errorf("%s: invalid delivery_scope %q", prefix, r.DeliveryScope)
+	}
+	if len(r.ClaimIDs) == 0 {
+		return fmt.Errorf("%s: claim_ids is required", prefix)
+	}
+	// Evidence traceability: every row must reference at least one evidence ID.
+	if len(r.SupportingEvidenceIDs) == 0 && len(r.ContradictoryEvidenceIDs) == 0 {
+		return fmt.Errorf("%s: at least one supporting or contradictory evidence id is required", prefix)
+	}
+	if r.Reason == "" {
+		return fmt.Errorf("%s: reason is required", prefix)
+	}
+	// Semantic consistency: verify status/verification_class/trust_class combinations.
+	if err := validateAcceptanceTrustSemantics(r.Status, r.VerificationClass, r.TrustClass, prefix); err != nil {
+		return err
 	}
 	return nil
 }

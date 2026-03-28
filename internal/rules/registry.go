@@ -7,28 +7,31 @@ type targetEntry struct {
 
 var targetRegistry = map[string]targetEntry{
 	// ── Authentication ──
-	"auth.jwt_middleware":    {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "MiddlewareFact"}},
+	"auth.jwt_middleware":     {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "MiddlewareFact"}},
 	"auth.api_key_validation": {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
 
 	// ── Rate Limiting ──
 	"rate_limit.middleware": {RequiredFactTypes: []string{"SymbolFact", "MiddlewareFact"}},
 
 	// ── Secrets & Config ──
-	"secret.hardcoded_credential": {RequiredFactTypes: []string{"SecretFact"}},
-	"secret.env_file_committed":   {RequiredFactTypes: []string{"FileFact"}},
-	"config.env_based":            {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
+	"secret.hardcoded_credential":        {RequiredFactTypes: []string{"SecretFact"}},
+	"secret.env_file_committed":          {RequiredFactTypes: []string{"FileFact"}},
+	"config.env_based":                   {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
+	"config.env_read_call_exists":        {RequiredFactTypes: []string{"ConfigReadFact"}},
+	"config.secret_key_sourced_from_env": {RequiredFactTypes: []string{"ConfigReadFact"}},
+	"config.secret_key_not_literal":      {RequiredFactTypes: []string{"ConfigReadFact"}},
 
 	// ── Input Validation & Security Headers ──
-	"security.input_validation":     {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
-	"security.cors_configuration":   {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "MiddlewareFact"}},
-	"security.headers_middleware":   {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "MiddlewareFact"}},
-	"security.sql_injection_pattern": {RequiredFactTypes: []string{"DataAccessFact", "SymbolFact"}},
+	"security.input_validation":       {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
+	"security.cors_configuration":     {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "MiddlewareFact"}},
+	"security.headers_middleware":     {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "MiddlewareFact"}},
+	"security.sql_injection_pattern":  {RequiredFactTypes: []string{"DataAccessFact", "SymbolFact"}},
 	"security.sensitive_data_in_logs": {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
 
 	// ── Architecture & Layering ──
-	"layer.repository":                {RequiredFactTypes: []string{"SymbolFact", "FileFact"}},
-	"layer.service":                   {RequiredFactTypes: []string{"SymbolFact", "FileFact"}},
-	"db.direct_access_from_controller": {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "DataAccessFact"}},
+	"layer.repository":                  {RequiredFactTypes: []string{"SymbolFact", "FileFact"}},
+	"layer.service":                     {RequiredFactTypes: []string{"SymbolFact", "FileFact"}},
+	"db.direct_access_from_controller":  {RequiredFactTypes: []string{"SymbolFact", "ImportFact", "DataAccessFact"}},
 	"architecture.dependency_injection": {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
 
 	// ── Error Handling ──
@@ -41,8 +44,8 @@ var targetRegistry = map[string]targetEntry{
 
 	// ── Routes & Lifecycle ──
 	"route.protected_uses_auth_middleware": {RequiredFactTypes: []string{"RouteFact"}},
-	"route.public_without_auth":           {RequiredFactTypes: []string{"RouteFact"}},
-	"route.health_check":                  {RequiredFactTypes: []string{"RouteFact"}},
+	"route.public_without_auth":            {RequiredFactTypes: []string{"RouteFact"}},
+	"route.health_check":                   {RequiredFactTypes: []string{"RouteFact"}},
 	"lifecycle.graceful_shutdown":          {RequiredFactTypes: []string{"SymbolFact", "ImportFact"}},
 
 	// ── Testing ──
@@ -50,16 +53,16 @@ var targetRegistry = map[string]targetEntry{
 	"module.auth_service":    {RequiredFactTypes: []string{"SymbolFact", "FileFact", "TestFact"}},
 
 	// ── Design Patterns ──
-	"pattern.repository_encapsulation":  {RequiredFactTypes: []string{"SymbolFact", "FileFact", "DataAccessFact"}},
+	"pattern.repository_encapsulation": {RequiredFactTypes: []string{"SymbolFact", "FileFact", "DataAccessFact"}},
 	"pattern.dto_separation":           {RequiredFactTypes: []string{"SymbolFact", "FileFact", "RouteFact"}},
 	"pattern.singleton_mutable_global": {RequiredFactTypes: []string{"SymbolFact"}},
 
 	// ── GoF Design Patterns — Creational ──
-	"gof.singleton":       {RequiredFactTypes: []string{"SymbolFact"}},
-	"gof.factory_method":  {RequiredFactTypes: []string{"SymbolFact"}},
+	"gof.singleton":        {RequiredFactTypes: []string{"SymbolFact"}},
+	"gof.factory_method":   {RequiredFactTypes: []string{"SymbolFact"}},
 	"gof.abstract_factory": {RequiredFactTypes: []string{"SymbolFact"}},
-	"gof.builder":         {RequiredFactTypes: []string{"SymbolFact"}},
-	"gof.prototype":       {RequiredFactTypes: []string{"SymbolFact"}},
+	"gof.builder":          {RequiredFactTypes: []string{"SymbolFact"}},
+	"gof.prototype":        {RequiredFactTypes: []string{"SymbolFact"}},
 
 	// ── GoF Design Patterns — Structural ──
 	"gof.adapter":   {RequiredFactTypes: []string{"SymbolFact"}},
