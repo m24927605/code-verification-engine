@@ -195,7 +195,7 @@ type testPlugin struct {
 	called     bool
 }
 
-func (p *testPlugin) Name() string        { return p.name }
+func (p *testPlugin) Name() string         { return p.name }
 func (p *testPlugin) Languages() []string  { return p.languages }
 func (p *testPlugin) Extensions() []string { return p.extensions }
 func (p *testPlugin) Analyze(_ context.Context, _ string, files []string) ([]byte, error) {
@@ -299,6 +299,18 @@ func TestWithInterpretation(t *testing.T) {
 	}
 }
 
+func TestWithAgentRuntime(t *testing.T) {
+	provider := &mockLLMProvider{response: `{"status":"completed"}`}
+	e := NewEngine(WithAgentRuntime(provider))
+	de := e.(*defaultEngine)
+	if !de.config.agentRuntime {
+		t.Fatal("agentRuntime flag should be true")
+	}
+	if de.config.agentProvider == nil {
+		t.Fatal("agent provider should be set")
+	}
+}
+
 func TestWithMultipleOptions(t *testing.T) {
 	var buf strings.Builder
 	provider := &mockLLMProvider{response: "test"}
@@ -317,6 +329,7 @@ func TestWithMultipleOptions(t *testing.T) {
 	e := NewEngine(
 		WithProgress(&buf),
 		WithInterpretation(provider),
+		WithAgentRuntime(provider),
 		WithAnalyzerPlugin(plugin),
 		WithHook(hook),
 	)
@@ -326,6 +339,9 @@ func TestWithMultipleOptions(t *testing.T) {
 	}
 	if !de.config.interpret {
 		t.Fatal("interpret should be true")
+	}
+	if !de.config.agentRuntime {
+		t.Fatal("agentRuntime should be true")
 	}
 	if len(de.config.plugins) != 1 {
 		t.Fatalf("expected 1 plugin, got %d", len(de.config.plugins))
@@ -505,6 +521,277 @@ func TestVerifyOutputTypedJSONSerialization(t *testing.T) {
 		if f.TrustClass == "" {
 			t.Errorf("finding %s missing trust_class after round-trip", f.RuleID)
 		}
+	}
+}
+
+func TestVerifyOutputVerifiableOmittedWhenNil(t *testing.T) {
+	out := &VerifyOutput{}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal VerifyOutput: %v", err)
+	}
+	if strings.Contains(string(data), "verifiable") {
+		t.Fatalf("expected verifiable to be omitted when nil, got %s", string(data))
+	}
+}
+
+func TestVerifyOutputVerifiableRoundTrip(t *testing.T) {
+	out := &VerifyOutput{
+		Verifiable: &VerifiableOutput{
+			Report: ReportV2Output{
+				SchemaVersion: ReportV2SchemaVersion,
+				EngineVersion: "verabase@dev",
+				Repo:          "github.com/acme/repo",
+				Commit:        "abc123",
+				Timestamp:     "2026-03-27T12:00:00Z",
+				TraceID:       "trace-abc123",
+				Summary: ReportV2SummaryOutput{
+					OverallScore: 0.82,
+					RiskLevel:    "medium",
+					IssueCounts:  IssueCountV2Output{High: 1},
+				},
+				Issues: []IssueV2Output{{
+					ID:              "iss-1",
+					Fingerprint:     "fp-1",
+					RuleFamily:      "sec_secret",
+					MergeBasis:      "same_symbol",
+					Category:        "security",
+					Title:           "Missing null check",
+					Severity:        "high",
+					Confidence:      0.91,
+					ConfidenceClass: "high",
+					PolicyClass:     "machine_trusted",
+					Status:          "open",
+					EvidenceIDs:     []string{"ev-1"},
+					SourceSummary:   IssueSourceSummaryV2Output{RuleCount: 1, DeterministicSources: 1, TotalSources: 1},
+				}},
+			},
+			Evidence: EvidenceV2Output{
+				SchemaVersion: EvidenceV2SchemaVersion,
+				EngineVersion: "verabase@dev",
+				Repo:          "github.com/acme/repo",
+				Commit:        "abc123",
+				Timestamp:     "2026-03-27T12:00:00Z",
+				Evidence: []EvidenceV2Record{{
+					ID:              "ev-1",
+					Kind:            "rule_assertion",
+					Source:          "rule",
+					ProducerID:      "rule:SEC-001",
+					ProducerVersion: "1.0.0",
+					Repo:            "github.com/acme/repo",
+					Commit:          "abc123",
+					BoundaryHash:    "sha256:x",
+					FactQuality:     "proof",
+					Locations:       []LocationV2Output{{RepoRelPath: "service.ts", StartLine: 10, EndLine: 10}},
+					Claims:          []string{"SEC-001"},
+					CreatedAt:       "2026-03-27T12:00:00Z",
+				}},
+			},
+			Trace: TraceV2Output{
+				SchemaVersion: "2.0.0",
+				EngineVersion: "verabase@dev",
+				TraceID:       "trace-abc123",
+				Repo:          "github.com/acme/repo",
+				Commit:        "abc123",
+				Timestamp:     "2026-03-27T12:00:00Z",
+				ScanBoundary:  TraceScanBoundaryV2Output{Mode: "repo", IncludedFiles: 1},
+				ConfidenceCalibration: &ConfidenceCalibrationV2Output{
+					Version:                 "v2-release-blocking-calibration-1",
+					MachineTrustedThreshold: 0.85,
+					UnknownCap:              0.55,
+					AgentOnlyCap:            0.60,
+					RuleFamilyBaselines:     map[string]float64{"sec_secret": 0.94},
+					OrderingRules:           []string{"issue_native > seed_native > finding_bridged"},
+				},
+			},
+			SummaryMD: "# Verabase Report\n",
+			Signature: SignatureV2Output{Version: SignatureSchemaVersion},
+		},
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal VerifyOutput: %v", err)
+	}
+	if !strings.Contains(string(data), `"verifiable"`) {
+		t.Fatalf("expected verifiable to be serialized, got %s", string(data))
+	}
+	var roundTrip VerifyOutput
+	if err := json.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatalf("unmarshal VerifyOutput: %v", err)
+	}
+	if roundTrip.Verifiable == nil || roundTrip.Verifiable.Report.TraceID != "trace-abc123" {
+		t.Fatalf("expected verifiable round-trip, got %#v", roundTrip.Verifiable)
+	}
+	if roundTrip.Verifiable.Report.Issues[0].RuleFamily != "sec_secret" {
+		t.Fatalf("expected rule_family round-trip, got %#v", roundTrip.Verifiable.Report.Issues[0])
+	}
+	if roundTrip.Verifiable.Trace.ConfidenceCalibration == nil || roundTrip.Verifiable.Trace.ConfidenceCalibration.RuleFamilyBaselines["sec_secret"] != 0.94 {
+		t.Fatalf("expected confidence calibration round-trip, got %#v", roundTrip.Verifiable.Trace.ConfidenceCalibration)
+	}
+}
+
+func TestVerifyOutputClaimsOmittedWhenNil(t *testing.T) {
+	out := &VerifyOutput{}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal VerifyOutput: %v", err)
+	}
+	if strings.Contains(string(data), "claims") {
+		t.Fatalf("expected claims to be omitted when nil, got %s", string(data))
+	}
+}
+
+func TestVerifyOutputClaimsRoundTrip(t *testing.T) {
+	out := &VerifyOutput{
+		Claims: &ClaimReportOutput{
+			SchemaVersion: "1.0.0",
+			ClaimSetName:  "backend-security",
+			TotalClaims:   1,
+			Verdicts: ClaimVerdictSummaryOutput{
+				Verified: 1,
+				Passed:   1,
+			},
+			Claims: []ClaimVerdictOutput{
+				{
+					ClaimID:           "architecture.multi_agent_pipeline",
+					Title:             "Multi-agent pipeline",
+					Category:          "architecture",
+					Status:            "pass",
+					Confidence:        "high",
+					VerificationLevel: "verified",
+					TrustBreakdown: ClaimTrustBreakdownOutput{
+						MachineTrusted:      2,
+						EffectiveTrustClass: "machine_trusted",
+					},
+					Summary: "verified from code and tests",
+					SupportingRules: []ClaimRuleResultOutput{
+						{RuleID: "ARCH-001", Status: "pass", Confidence: "high", Message: "rule hit"},
+					},
+					EvidenceChain: []ClaimEvidenceLinkOutput{
+						{
+							ID:        "ev-1",
+							Type:      "supports",
+							File:      "main.go",
+							LineStart: 10,
+							LineEnd:   20,
+							Symbol:    "Run",
+							Excerpt:   "func Run() {}",
+							FromRule:  "ARCH-001",
+							Relation:  "supports",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal VerifyOutput: %v", err)
+	}
+	if !strings.Contains(string(data), `"claim_report_schema_version"`) {
+		t.Fatalf("expected claims to be serialized, got %s", string(data))
+	}
+
+	var roundTrip VerifyOutput
+	if err := json.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatalf("unmarshal VerifyOutput: %v", err)
+	}
+	if roundTrip.Claims == nil || roundTrip.Claims.ClaimSetName != "backend-security" {
+		t.Fatalf("expected claims round-trip, got %#v", roundTrip.Claims)
+	}
+	if len(roundTrip.Claims.Claims) != 1 || roundTrip.Claims.Claims[0].ClaimID != "architecture.multi_agent_pipeline" {
+		t.Fatalf("expected claim round-trip, got %#v", roundTrip.Claims.Claims)
+	}
+}
+
+func TestVerifyOutputClaimsProjectionOmittedWhenNil(t *testing.T) {
+	out := &VerifyOutput{}
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal VerifyOutput: %v", err)
+	}
+	if strings.Contains(string(data), "claims_projection") {
+		t.Fatalf("expected claims_projection to be omitted when nil, got %s", string(data))
+	}
+}
+
+func TestVerifyOutputClaimsProjectionRoundTrip(t *testing.T) {
+	out := &VerifyOutput{
+		ClaimsProjection: &ClaimsProjectionOutput{
+			Claims: ClaimsArtifactOutput{
+				SchemaVersion: "1.0.0",
+				Repository:    ClaimRepositoryRef{Path: "/repo", Commit: "abc123"},
+				Claims: []ClaimRecordOutput{
+					{
+						ClaimID:               "architecture.multi_agent_pipeline",
+						Title:                 "Multi-agent pipeline exists",
+						Category:              "architecture",
+						ClaimType:             "architecture",
+						Status:                "accepted",
+						SupportLevel:          "verified",
+						Confidence:            0.93,
+						SourceOrigins:         []string{"code_inferred", "readme_extracted"},
+						SupportingEvidenceIDs: []string{"src-1", "src-2"},
+						Reason:                "code-backed by multiple sources",
+						ProjectionEligible:    true,
+					},
+				},
+				Summary: ClaimSummaryOutput{Verified: 1},
+			},
+			Profile: ProfileArtifactOutput{
+				SchemaVersion: "1.0.0",
+				Repository:    ClaimRepositoryRef{Path: "/repo", Commit: "abc123"},
+				Highlights: []CapabilityHighlightOutput{
+					{
+						HighlightID:           "hl-1",
+						Title:                 "Built a multi-agent pipeline",
+						SupportLevel:          "verified",
+						ClaimIDs:              []string{"architecture.multi_agent_pipeline"},
+						SupportingEvidenceIDs: []string{"src-1"},
+					},
+				},
+				CapabilityAreas: []CapabilityAreaOutput{
+					{AreaID: "architecture", Title: "Architecture", ClaimIDs: []string{"architecture.multi_agent_pipeline"}},
+				},
+				Technologies: []string{"go", "typescript"},
+				ClaimIDs:     []string{"architecture.multi_agent_pipeline"},
+			},
+			ResumeInput: ResumeInputArtifactOutput{
+				SchemaVersion: "1.0.0",
+				Profile: ProfileArtifactOutput{
+					SchemaVersion: "1.0.0",
+					Repository:    ClaimRepositoryRef{Path: "/repo", Commit: "abc123"},
+				},
+				VerifiedClaims:     []ResumeClaimStubOutput{{ClaimID: "architecture.multi_agent_pipeline", Title: "Multi-agent pipeline exists", SupportLevel: "verified", Confidence: 0.93}},
+				TechnologySummary:  []string{"go", "typescript"},
+				EvidenceReferences: []EvidenceReferenceOutput{{EvidenceID: "src-1", ClaimIDs: []string{"architecture.multi_agent_pipeline"}}},
+				SynthesisConstraints: SynthesisConstraintsOutput{
+					AllowUnsupportedClaims:        false,
+					AllowClaimInvention:           false,
+					AllowContradictionSuppression: false,
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal VerifyOutput: %v", err)
+	}
+	if !strings.Contains(string(data), `"claims_projection"`) {
+		t.Fatalf("expected claims_projection to be serialized, got %s", string(data))
+	}
+
+	var roundTrip VerifyOutput
+	if err := json.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatalf("unmarshal VerifyOutput: %v", err)
+	}
+	if roundTrip.ClaimsProjection == nil {
+		t.Fatal("expected claims_projection round-trip")
+	}
+	if len(roundTrip.ClaimsProjection.Claims.Claims) != 1 || roundTrip.ClaimsProjection.Claims.Claims[0].ClaimID != "architecture.multi_agent_pipeline" {
+		t.Fatalf("unexpected claims projection round-trip: %#v", roundTrip.ClaimsProjection.Claims.Claims)
 	}
 }
 

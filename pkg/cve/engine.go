@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/verabase/code-verification-engine/internal/artifactsv2"
 	"github.com/verabase/code-verification-engine/internal/claims"
 	internalEngine "github.com/verabase/code-verification-engine/internal/engine"
 	"github.com/verabase/code-verification-engine/internal/interpret"
@@ -111,6 +112,11 @@ func (e *defaultEngine) Verify(ctx context.Context, input VerifyInput) (*VerifyO
 		bridged := &llmProviderBridge{pub: e.config.llmProvider}
 		llmProvider = interpret.NewSafeProvider(bridged, interpret.DefaultProviderConfig())
 	}
+	var agentProvider interpret.LLMProvider
+	if e.config.agentRuntime && e.config.agentProvider != nil {
+		bridged := &llmProviderBridge{pub: e.config.agentProvider}
+		agentProvider = interpret.NewSafeProvider(bridged, interpret.DefaultProviderConfig())
+	}
 
 	// Bridge analyzer plugins
 	var plugins []internalEngine.PluginAnalyzer
@@ -125,21 +131,23 @@ func (e *defaultEngine) Verify(ctx context.Context, input VerifyInput) (*VerifyO
 	}
 
 	result := internalEngine.Run(internalEngine.Config{
-		Ctx:          ctx,
-		RepoPath:     input.RepoPath,
-		Ref:          ref,
-		Profile:      profile,
-		ClaimSet:     input.ClaimSet,
-		OutputDir:    input.OutputDir,
-		Format:       format,
-		Strict:       input.Strict,
-		Interpret:    e.config.interpret,
-		LLMProvider:  llmProvider,
-		Progress:     e.config.progress,
-		Hooks:        hooks,
-		Plugins:      plugins,
-		Mode:         input.Mode,
-		SkillProfile: input.SkillProfile,
+		Ctx:           ctx,
+		RepoPath:      input.RepoPath,
+		Ref:           ref,
+		Profile:       profile,
+		ClaimSet:      input.ClaimSet,
+		OutputDir:     input.OutputDir,
+		Format:        format,
+		Strict:        input.Strict,
+		Interpret:     e.config.interpret,
+		LLMProvider:   llmProvider,
+		AgentRuntime:  e.config.agentRuntime,
+		AgentProvider: agentProvider,
+		Progress:      e.config.progress,
+		Hooks:         hooks,
+		Plugins:       plugins,
+		Mode:          input.Mode,
+		SkillProfile:  input.SkillProfile,
 	})
 
 	// Convert internal scan report to typed public output
@@ -244,13 +252,31 @@ func (e *defaultEngine) Verify(ctx context.Context, input VerifyInput) (*VerifyO
 		skillOut = bridgeSkillReport(result.SkillReport)
 	}
 
+	var claimOut *ClaimReportOutput
+	if result.ClaimReport != nil {
+		claimOut = bridgeClaimReport(result.ClaimReport)
+	}
+
+	var claimsProjectionOut *ClaimsProjectionOutput
+	if result.VerifiableClaimsArtifacts != nil {
+		claimsProjectionOut = bridgeClaimsProjection(result.VerifiableClaimsArtifacts)
+	}
+
+	var verifiableOut *VerifiableOutput
+	if result.VerifiableBundle != nil {
+		verifiableOut = bridgeVerifiableBundle(result.VerifiableBundle)
+	}
+
 	return &VerifyOutput{
-		ExitCode: result.ExitCode,
-		Success:  result.ExitCode == 0,
-		Scan:     scanOut,
-		Report:   reportOut,
-		Skills:   skillOut,
-		Errors:   result.Errors,
+		ExitCode:         result.ExitCode,
+		Success:          result.ExitCode == 0,
+		Scan:             scanOut,
+		Report:           reportOut,
+		Skills:           skillOut,
+		Claims:           claimOut,
+		ClaimsProjection: claimsProjectionOut,
+		Verifiable:       verifiableOut,
+		Errors:           result.Errors,
 	}, nil
 }
 
@@ -350,6 +376,493 @@ func bridgeSkillReport(r *skills.Report) SkillOutput {
 			Inferred:    r.Summary.Inferred,
 			Unsupported: r.Summary.Unsupported,
 		},
+	}
+}
+
+func bridgeClaimReport(r *claims.ClaimReport) *ClaimReportOutput {
+	if r == nil {
+		return nil
+	}
+	verdicts := make([]ClaimVerdictOutput, 0, len(r.Claims))
+	for _, v := range r.Claims {
+		supportingRules := make([]ClaimRuleResultOutput, 0, len(v.SupportingRules))
+		for _, sr := range v.SupportingRules {
+			supportingRules = append(supportingRules, ClaimRuleResultOutput{
+				RuleID:     sr.RuleID,
+				Status:     sr.Status,
+				Confidence: sr.Confidence,
+				Message:    sr.Message,
+			})
+		}
+		evidenceChain := make([]ClaimEvidenceLinkOutput, 0, len(v.EvidenceChain))
+		for _, ev := range v.EvidenceChain {
+			evidenceChain = append(evidenceChain, ClaimEvidenceLinkOutput{
+				ID:        ev.ID,
+				Type:      ev.Type,
+				File:      ev.File,
+				LineStart: ev.LineStart,
+				LineEnd:   ev.LineEnd,
+				Symbol:    ev.Symbol,
+				Excerpt:   ev.Excerpt,
+				FromRule:  ev.FromRule,
+				Relation:  ev.Relation,
+			})
+		}
+		verdicts = append(verdicts, ClaimVerdictOutput{
+			ClaimID:           v.ClaimID,
+			Title:             v.Title,
+			Category:          v.Category,
+			Status:            v.Status,
+			Confidence:        v.Confidence,
+			VerificationLevel: v.VerificationLevel,
+			TrustBreakdown: ClaimTrustBreakdownOutput{
+				MachineTrusted:         v.TrustBreakdown.MachineTrusted,
+				Advisory:               v.TrustBreakdown.Advisory,
+				HumanOrRuntimeRequired: v.TrustBreakdown.HumanOrRuntimeRequired,
+				EffectiveTrustClass:    v.TrustBreakdown.EffectiveTrustClass,
+			},
+			Summary:         v.Summary,
+			SupportingRules: supportingRules,
+			EvidenceChain:   evidenceChain,
+			UnknownReasons:  append([]string(nil), v.UnknownReasons...),
+		})
+	}
+	return &ClaimReportOutput{
+		SchemaVersion: r.SchemaVersion,
+		ClaimSetName:  r.ClaimSetName,
+		TotalClaims:   r.TotalClaims,
+		Verdicts: ClaimVerdictSummaryOutput{
+			Verified: r.Verdicts.Verified,
+			Passed:   r.Verdicts.Passed,
+			Failed:   r.Verdicts.Failed,
+			Unknown:  r.Verdicts.Unknown,
+			Partial:  r.Verdicts.Partial,
+		},
+		Claims: verdicts,
+	}
+}
+
+func bridgeVerifiableBundle(b *artifactsv2.Bundle) *VerifiableOutput {
+	if b == nil {
+		return nil
+	}
+	out := &VerifiableOutput{
+		Report:    bridgeReportV2(b.Report),
+		Evidence:  bridgeEvidenceV2(b.Evidence),
+		Skills:    bridgeSkillsV2(b.Skills),
+		Trace:     bridgeTraceV2(b.Trace),
+		SummaryMD: b.SummaryMD,
+		Signature: bridgeSignatureV2(b.Signature),
+	}
+	return out
+}
+
+func bridgeClaimsProjection(a *artifactsv2.ClaimsProjectionArtifacts) *ClaimsProjectionOutput {
+	if a == nil {
+		return nil
+	}
+	return &ClaimsProjectionOutput{
+		Claims: ClaimsArtifactOutput{
+			SchemaVersion: a.Claims.SchemaVersion,
+			Repository: ClaimRepositoryRef{
+				Path:   a.Claims.Repository.Path,
+				Commit: a.Claims.Repository.Commit,
+			},
+			Claims:  bridgeClaimRecords(a.Claims.Claims),
+			Summary: bridgeClaimSummary(a.Claims.Summary),
+		},
+		Profile:     bridgeProfileArtifact(a.Profile),
+		ResumeInput: bridgeResumeInputArtifact(a.ResumeInput),
+	}
+}
+
+func bridgeClaimRecords(in []artifactsv2.ClaimRecord) []ClaimRecordOutput {
+	out := make([]ClaimRecordOutput, 0, len(in))
+	for _, claim := range in {
+		out = append(out, ClaimRecordOutput{
+			ClaimID:                  claim.ClaimID,
+			Title:                    claim.Title,
+			Category:                 claim.Category,
+			ClaimType:                claim.ClaimType,
+			Status:                   claim.Status,
+			SupportLevel:             claim.SupportLevel,
+			Confidence:               claim.Confidence,
+			SourceOrigins:            append([]string(nil), claim.SourceOrigins...),
+			SupportingEvidenceIDs:    append([]string(nil), claim.SupportingEvidenceIDs...),
+			ContradictoryEvidenceIDs: append([]string(nil), claim.ContradictoryEvidenceIDs...),
+			Reason:                   claim.Reason,
+			ProjectionEligible:       claim.ProjectionEligible,
+		})
+	}
+	return out
+}
+
+func bridgeClaimSummary(in artifactsv2.ClaimSummary) ClaimSummaryOutput {
+	return ClaimSummaryOutput{
+		Verified:          in.Verified,
+		StronglySupported: in.StronglySupported,
+		Supported:         in.Supported,
+		Weak:              in.Weak,
+		Unsupported:       in.Unsupported,
+		Contradicted:      in.Contradicted,
+	}
+}
+
+func bridgeProfileArtifact(in artifactsv2.ProfileArtifact) ProfileArtifactOutput {
+	out := ProfileArtifactOutput{
+		SchemaVersion: in.SchemaVersion,
+		Repository: ClaimRepositoryRef{
+			Path:   in.Repository.Path,
+			Commit: in.Repository.Commit,
+		},
+		Technologies: append([]string(nil), in.Technologies...),
+		ClaimIDs:     append([]string(nil), in.ClaimIDs...),
+	}
+	for _, h := range in.Highlights {
+		out.Highlights = append(out.Highlights, CapabilityHighlightOutput{
+			HighlightID:           h.HighlightID,
+			Title:                 h.Title,
+			SupportLevel:          h.SupportLevel,
+			ClaimIDs:              append([]string(nil), h.ClaimIDs...),
+			SupportingEvidenceIDs: append([]string(nil), h.SupportingEvidenceIDs...),
+		})
+	}
+	for _, area := range in.CapabilityAreas {
+		out.CapabilityAreas = append(out.CapabilityAreas, CapabilityAreaOutput{
+			AreaID:   area.AreaID,
+			Title:    area.Title,
+			ClaimIDs: append([]string(nil), area.ClaimIDs...),
+		})
+	}
+	return out
+}
+
+func bridgeResumeInputArtifact(in artifactsv2.ResumeInputArtifact) ResumeInputArtifactOutput {
+	out := ResumeInputArtifactOutput{
+		SchemaVersion:     in.SchemaVersion,
+		Profile:           bridgeProfileArtifact(in.Profile),
+		TechnologySummary: append([]string(nil), in.TechnologySummary...),
+		SynthesisConstraints: SynthesisConstraintsOutput{
+			AllowUnsupportedClaims:        in.SynthesisConstraints.AllowUnsupportedClaims,
+			AllowClaimInvention:           in.SynthesisConstraints.AllowClaimInvention,
+			AllowContradictionSuppression: in.SynthesisConstraints.AllowContradictionSuppression,
+		},
+	}
+	for _, claim := range in.VerifiedClaims {
+		out.VerifiedClaims = append(out.VerifiedClaims, ResumeClaimStubOutput{
+			ClaimID:               claim.ClaimID,
+			Title:                 claim.Title,
+			SupportLevel:          claim.SupportLevel,
+			Confidence:            claim.Confidence,
+			SupportingEvidenceIDs: append([]string(nil), claim.SupportingEvidenceIDs...),
+		})
+	}
+	for _, claim := range in.StronglySupportedClaims {
+		out.StronglySupportedClaims = append(out.StronglySupportedClaims, ResumeClaimStubOutput{
+			ClaimID:               claim.ClaimID,
+			Title:                 claim.Title,
+			SupportLevel:          claim.SupportLevel,
+			Confidence:            claim.Confidence,
+			SupportingEvidenceIDs: append([]string(nil), claim.SupportingEvidenceIDs...),
+		})
+	}
+	for _, ref := range in.EvidenceReferences {
+		out.EvidenceReferences = append(out.EvidenceReferences, EvidenceReferenceOutput{
+			EvidenceID:            ref.EvidenceID,
+			ClaimIDs:              append([]string(nil), ref.ClaimIDs...),
+			ContradictoryClaimIDs: append([]string(nil), ref.ContradictoryClaimIDs...),
+		})
+	}
+	return out
+}
+
+func bridgeReportV2(r artifactsv2.ReportArtifact) ReportV2Output {
+	out := ReportV2Output{
+		SchemaVersion: r.SchemaVersion,
+		EngineVersion: r.EngineVersion,
+		Repo:          r.Repo,
+		Commit:        r.Commit,
+		Timestamp:     r.Timestamp,
+		TraceID:       r.TraceID,
+		Summary: ReportV2SummaryOutput{
+			OverallScore: r.Summary.OverallScore,
+			RiskLevel:    r.Summary.RiskLevel,
+			IssueCounts: IssueCountV2Output{
+				Critical: r.Summary.IssueCounts.Critical,
+				High:     r.Summary.IssueCounts.High,
+				Medium:   r.Summary.IssueCounts.Medium,
+				Low:      r.Summary.IssueCounts.Low,
+			},
+		},
+	}
+	for _, skill := range r.Skills {
+		out.Skills = append(out.Skills, ReportV2SkillOutput{
+			SkillID: skill.SkillID,
+			Score:   skill.Score,
+		})
+	}
+	for _, issue := range r.Issues {
+		var breakdown *ConfidenceBreakdownV2Output
+		if issue.ConfidenceBreakdown != nil {
+			breakdown = &ConfidenceBreakdownV2Output{
+				RuleReliability:      issue.ConfidenceBreakdown.RuleReliability,
+				EvidenceQuality:      issue.ConfidenceBreakdown.EvidenceQuality,
+				BoundaryCompleteness: issue.ConfidenceBreakdown.BoundaryCompleteness,
+				ContextCompleteness:  issue.ConfidenceBreakdown.ContextCompleteness,
+				SourceAgreement:      issue.ConfidenceBreakdown.SourceAgreement,
+				ContradictionPenalty: issue.ConfidenceBreakdown.ContradictionPenalty,
+				LLMPenalty:           issue.ConfidenceBreakdown.LLMPenalty,
+				Final:                issue.ConfidenceBreakdown.Final,
+			}
+		}
+		out.Issues = append(out.Issues, IssueV2Output{
+			ID:                 issue.ID,
+			Fingerprint:        issue.Fingerprint,
+			RuleFamily:         issue.RuleFamily,
+			MergeBasis:         issue.MergeBasis,
+			Category:           issue.Category,
+			Title:              issue.Title,
+			Severity:           issue.Severity,
+			Confidence:         issue.Confidence,
+			ConfidenceClass:    issue.ConfidenceClass,
+			PolicyClass:        issue.PolicyClass,
+			Status:             issue.Status,
+			EvidenceIDs:        append([]string(nil), issue.EvidenceIDs...),
+			CounterEvidenceIDs: append([]string(nil), issue.CounterEvidenceIDs...),
+			SkillImpacts:       append([]string(nil), issue.SkillImpacts...),
+			Sources:            append([]string(nil), issue.Sources...),
+			SourceSummary: IssueSourceSummaryV2Output{
+				RuleCount:            issue.SourceSummary.RuleCount,
+				DeterministicSources: issue.SourceSummary.DeterministicSources,
+				AgentSources:         issue.SourceSummary.AgentSources,
+				TotalSources:         issue.SourceSummary.TotalSources,
+				MultiSource:          issue.SourceSummary.MultiSource,
+			},
+			ConfidenceBreakdown: breakdown,
+		})
+	}
+	return out
+}
+
+func bridgeEvidenceV2(a artifactsv2.EvidenceArtifact) EvidenceV2Output {
+	out := EvidenceV2Output{
+		SchemaVersion: a.SchemaVersion,
+		EngineVersion: a.EngineVersion,
+		Repo:          a.Repo,
+		Commit:        a.Commit,
+		Timestamp:     a.Timestamp,
+	}
+	for _, ev := range a.Evidence {
+		locs := make([]LocationV2Output, 0, len(ev.Locations))
+		for _, loc := range ev.Locations {
+			locs = append(locs, LocationV2Output{
+				RepoRelPath: loc.RepoRelPath,
+				StartLine:   loc.StartLine,
+				EndLine:     loc.EndLine,
+				StartCol:    loc.StartCol,
+				EndCol:      loc.EndCol,
+				SymbolID:    loc.SymbolID,
+			})
+		}
+		out.Evidence = append(out.Evidence, EvidenceV2Record{
+			ID:              ev.ID,
+			Kind:            ev.Kind,
+			Source:          ev.Source,
+			ProducerID:      ev.ProducerID,
+			ProducerVersion: ev.ProducerVersion,
+			Repo:            ev.Repo,
+			Commit:          ev.Commit,
+			BoundaryHash:    ev.BoundaryHash,
+			FactQuality:     ev.FactQuality,
+			EntityIDs:       append([]string(nil), ev.EntityIDs...),
+			Locations:       locs,
+			Claims:          append([]string(nil), ev.Claims...),
+			Payload:         ev.Payload,
+			Supports:        append([]string(nil), ev.Supports...),
+			Contradicts:     append([]string(nil), ev.Contradicts...),
+			DerivedFrom:     append([]string(nil), ev.DerivedFrom...),
+			CreatedAt:       ev.CreatedAt,
+		})
+	}
+	return out
+}
+
+func bridgeSkillsV2(a artifactsv2.SkillsArtifact) SkillsV2Output {
+	out := SkillsV2Output{
+		SchemaVersion: a.SchemaVersion,
+		EngineVersion: a.EngineVersion,
+		Repo:          a.Repo,
+		Commit:        a.Commit,
+		Timestamp:     a.Timestamp,
+	}
+	for _, skill := range a.Skills {
+		var formula *SkillFormulaInputsV2Output
+		if skill.FormulaInputs != nil {
+			formula = &SkillFormulaInputsV2Output{}
+			for _, c := range skill.FormulaInputs.Positive {
+				formula.Positive = append(formula.Positive, WeightedContributionV2Output{
+					IssueID: c.IssueID,
+					Weight:  c.Weight,
+					Value:   c.Value,
+				})
+			}
+			for _, c := range skill.FormulaInputs.Negative {
+				formula.Negative = append(formula.Negative, WeightedContributionV2Output{
+					IssueID: c.IssueID,
+					Weight:  c.Weight,
+					Value:   c.Value,
+				})
+			}
+		}
+		out.Skills = append(out.Skills, SkillScoreV2Output{
+			SkillID:                 skill.SkillID,
+			Score:                   skill.Score,
+			Confidence:              skill.Confidence,
+			ContributingIssueIDs:    append([]string(nil), skill.ContributingIssueIDs...),
+			ContributingEvidenceIDs: append([]string(nil), skill.ContributingEvidenceIDs...),
+			FormulaInputs:           formula,
+		})
+	}
+	return out
+}
+
+func bridgeTraceV2(t artifactsv2.TraceArtifact) TraceV2Output {
+	out := TraceV2Output{
+		SchemaVersion: t.SchemaVersion,
+		EngineVersion: t.EngineVersion,
+		TraceID:       t.TraceID,
+		Repo:          t.Repo,
+		Commit:        t.Commit,
+		Timestamp:     t.Timestamp,
+		Partial:       t.Partial,
+		Degraded:      t.Degraded,
+		Errors:        append([]string(nil), t.Errors...),
+		ScanBoundary: TraceScanBoundaryV2Output{
+			Mode:          t.ScanBoundary.Mode,
+			IncludedFiles: t.ScanBoundary.IncludedFiles,
+			ExcludedFiles: t.ScanBoundary.ExcludedFiles,
+		},
+	}
+	if t.MigrationSummary != nil {
+		ruleStates := make(map[string]string, len(t.MigrationSummary.RuleStates))
+		for ruleID, state := range t.MigrationSummary.RuleStates {
+			ruleStates[ruleID] = state
+		}
+		ruleReasons := make(map[string]string, len(t.MigrationSummary.RuleReasons))
+		for ruleID, reason := range t.MigrationSummary.RuleReasons {
+			ruleReasons[ruleID] = reason
+		}
+		out.MigrationSummary = &RuleMigrationSummaryV2Output{
+			LegacyOnlyCount:     t.MigrationSummary.LegacyOnlyCount,
+			FindingBridgedCount: t.MigrationSummary.FindingBridgedCount,
+			SeedNativeCount:     t.MigrationSummary.SeedNativeCount,
+			IssueNativeCount:    t.MigrationSummary.IssueNativeCount,
+			RuleStates:          ruleStates,
+			RuleReasons:         ruleReasons,
+		}
+	}
+	if t.ConfidenceCalibration != nil {
+		familyBaselines := make(map[string]float64, len(t.ConfidenceCalibration.RuleFamilyBaselines))
+		for family, baseline := range t.ConfidenceCalibration.RuleFamilyBaselines {
+			familyBaselines[family] = baseline
+		}
+		out.ConfidenceCalibration = &ConfidenceCalibrationV2Output{
+			Version:                 t.ConfidenceCalibration.Version,
+			MachineTrustedThreshold: t.ConfidenceCalibration.MachineTrustedThreshold,
+			UnknownCap:              t.ConfidenceCalibration.UnknownCap,
+			AgentOnlyCap:            t.ConfidenceCalibration.AgentOnlyCap,
+			RuleFamilyBaselines:     familyBaselines,
+			OrderingRules:           append([]string(nil), t.ConfidenceCalibration.OrderingRules...),
+		}
+	}
+	for _, a := range t.Analyzers {
+		out.Analyzers = append(out.Analyzers, AnalyzerRunV2Output{
+			Name:     a.Name,
+			Version:  a.Version,
+			Language: a.Language,
+			Status:   a.Status,
+			Degraded: a.Degraded,
+			Reason:   a.Reason,
+		})
+	}
+	for _, r := range t.Rules {
+		out.Rules = append(out.Rules, RuleRunV2Output{
+			ID:                 r.ID,
+			Version:            r.Version,
+			MigrationState:     r.MigrationState,
+			MigrationReason:    r.MigrationReason,
+			TriggeredIssueIDs:  append([]string(nil), r.TriggeredIssueIDs...),
+			EmittedEvidenceIDs: append([]string(nil), r.EmittedEvidenceIDs...),
+		})
+	}
+	for _, sr := range t.SkippedRules {
+		out.SkippedRules = append(out.SkippedRules, SkippedRuleV2Output{
+			ID:     sr.ID,
+			Reason: sr.Reason,
+		})
+	}
+	for _, c := range t.ContextSelections {
+		locs := make([]LocationV2Output, 0, len(c.SelectedSpans))
+		for _, loc := range c.SelectedSpans {
+			locs = append(locs, LocationV2Output{
+				RepoRelPath: loc.RepoRelPath,
+				StartLine:   loc.StartLine,
+				EndLine:     loc.EndLine,
+				StartCol:    loc.StartCol,
+				EndCol:      loc.EndCol,
+				SymbolID:    loc.SymbolID,
+			})
+		}
+		out.ContextSelections = append(out.ContextSelections, ContextSelectionV2Output{
+			ID:                  c.ID,
+			TriggerType:         c.TriggerType,
+			TriggerID:           c.TriggerID,
+			SelectedEvidenceIDs: append([]string(nil), c.SelectedEvidenceIDs...),
+			EntityIDs:           append([]string(nil), c.EntityIDs...),
+			SelectedSpans:       locs,
+			MaxFiles:            c.MaxFiles,
+			MaxSpans:            c.MaxSpans,
+			MaxTokens:           c.MaxTokens,
+			SelectionTrace:      append([]string(nil), c.SelectionTrace...),
+		})
+	}
+	for _, a := range t.Agents {
+		out.Agents = append(out.Agents, AgentRunV2Output{
+			ID:                 a.ID,
+			Kind:               a.Kind,
+			IssueType:          a.IssueType,
+			Question:           a.Question,
+			IssueID:            a.IssueID,
+			ContextSelectionID: a.ContextSelectionID,
+			TriggerReason:      a.TriggerReason,
+			InputEvidenceIDs:   append([]string(nil), a.InputEvidenceIDs...),
+			OutputEvidenceIDs:  append([]string(nil), a.OutputEvidenceIDs...),
+			UnresolvedReasons:  append([]string(nil), a.UnresolvedReasons...),
+			MaxFiles:           a.MaxFiles,
+			MaxTokens:          a.MaxTokens,
+			AllowSpeculation:   a.AllowSpeculation,
+			Status:             a.Status,
+		})
+	}
+	for _, d := range t.Derivations {
+		out.Derivations = append(out.Derivations, IssueDerivationV2Output{
+			IssueID:                d.IssueID,
+			IssueFingerprint:       d.IssueFingerprint,
+			DerivedFromEvidenceIDs: append([]string(nil), d.DerivedFromEvidenceIDs...),
+		})
+	}
+	return out
+}
+
+func bridgeSignatureV2(s artifactsv2.SignatureArtifact) SignatureV2Output {
+	return SignatureV2Output{
+		Version:         s.Version,
+		SignedBy:        s.SignedBy,
+		Timestamp:       s.Timestamp,
+		ArtifactHashes:  s.ArtifactHashes,
+		BundleHash:      s.BundleHash,
+		Signature:       s.Signature,
+		SignatureScheme: s.SignatureScheme,
 	}
 }
 

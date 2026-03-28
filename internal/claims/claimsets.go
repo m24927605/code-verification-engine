@@ -3,9 +3,9 @@ package claims
 // AllClaimSets returns all available built-in claim sets.
 func AllClaimSets() map[string]ClaimSet {
 	return map[string]ClaimSet{
-		"backend-security":    backendSecurityClaimSet(),
+		"backend-security":     backendSecurityClaimSet(),
 		"backend-architecture": backendArchitectureClaimSet(),
-		"fullstack-security":  fullstackSecurityClaimSet(),
+		"fullstack-security":   fullstackSecurityClaimSet(),
 	}
 }
 

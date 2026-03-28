@@ -9,63 +9,63 @@ import (
 
 func TestClassifySignal_GOFIsInformational(t *testing.T) {
 	f := rules.Finding{RuleID: "GOF-C-001", Status: rules.StatusFail}
-	if got := ClassifySignal(f); got != SignalInformationalDetection {
+	if got := ClassifySignal(f, nil); got != SignalInformationalDetection {
 		t.Errorf("GOF fail = %q, want informational_detection", got)
 	}
 }
 
 func TestClassifySignal_GOFPassIsPass(t *testing.T) {
 	f := rules.Finding{RuleID: "GOF-C-001", Status: rules.StatusPass}
-	if got := ClassifySignal(f); got != SignalPass {
+	if got := ClassifySignal(f, nil); got != SignalPass {
 		t.Errorf("GOF pass = %q, want pass", got)
 	}
 }
 
 func TestClassifySignal_SecurityIsActionable(t *testing.T) {
 	f := rules.Finding{RuleID: "SEC-SECRET-001", Status: rules.StatusFail}
-	if got := ClassifySignal(f); got != SignalActionableFail {
+	if got := ClassifySignal(f, nil); got != SignalActionableFail {
 		t.Errorf("SEC fail = %q, want actionable_fail", got)
 	}
 }
 
 func TestClassifySignal_ArchLayerIsActionable(t *testing.T) {
 	f := rules.Finding{RuleID: "ARCH-LAYER-001", Status: rules.StatusFail}
-	if got := ClassifySignal(f); got != SignalActionableFail {
+	if got := ClassifySignal(f, nil); got != SignalActionableFail {
 		t.Errorf("ARCH-LAYER fail = %q, want actionable_fail", got)
 	}
 }
 
 func TestClassifySignal_ArchPatternIsAdvisory(t *testing.T) {
 	f := rules.Finding{RuleID: "ARCH-PATTERN-002", Status: rules.StatusFail}
-	if got := ClassifySignal(f); got != SignalAdvisoryFail {
+	if got := ClassifySignal(f, nil); got != SignalAdvisoryFail {
 		t.Errorf("ARCH-PATTERN fail = %q, want advisory_fail", got)
 	}
 }
 
 func TestClassifySignal_QualityIsAdvisory(t *testing.T) {
 	f := rules.Finding{RuleID: "QUAL-LOG-001", Status: rules.StatusFail}
-	if got := ClassifySignal(f); got != SignalAdvisoryFail {
+	if got := ClassifySignal(f, nil); got != SignalAdvisoryFail {
 		t.Errorf("QUAL fail = %q, want advisory_fail", got)
 	}
 }
 
 func TestClassifySignal_FrontendSecurityIsActionable(t *testing.T) {
 	f := rules.Finding{RuleID: "FE-TOKEN-001", Status: rules.StatusFail}
-	if got := ClassifySignal(f); got != SignalActionableFail {
+	if got := ClassifySignal(f, nil); got != SignalActionableFail {
 		t.Errorf("FE-TOKEN fail = %q, want actionable_fail", got)
 	}
 }
 
 func TestClassifySignal_FrontendQualityIsAdvisory(t *testing.T) {
 	f := rules.Finding{RuleID: "FE-DEP-001", Status: rules.StatusFail}
-	if got := ClassifySignal(f); got != SignalAdvisoryFail {
+	if got := ClassifySignal(f, nil); got != SignalAdvisoryFail {
 		t.Errorf("FE-DEP fail = %q, want advisory_fail", got)
 	}
 }
 
 func TestClassifySignal_UnknownIsUnknown(t *testing.T) {
 	f := rules.Finding{RuleID: "SEC-AUTH-001", Status: rules.StatusUnknown}
-	if got := ClassifySignal(f); got != SignalUnknown {
+	if got := ClassifySignal(f, nil); got != SignalUnknown {
 		t.Errorf("unknown = %q, want unknown", got)
 	}
 }
@@ -79,7 +79,7 @@ func TestClassifySignal_TestOnlyEvidenceIsAdvisory(t *testing.T) {
 			{File: "test/fixtures/data.ts"},
 		},
 	}
-	if got := ClassifySignal(f); got != SignalAdvisoryFail {
+	if got := ClassifySignal(f, nil); got != SignalAdvisoryFail {
 		t.Errorf("test-only evidence SEC = %q, want advisory_fail", got)
 	}
 }
@@ -93,7 +93,7 @@ func TestClassifySignal_MixedEvidenceStaysActionable(t *testing.T) {
 			{File: "src/main.ts"},
 		},
 	}
-	if got := ClassifySignal(f); got != SignalActionableFail {
+	if got := ClassifySignal(f, nil); got != SignalActionableFail {
 		t.Errorf("mixed evidence SEC = %q, want actionable_fail", got)
 	}
 }
@@ -107,7 +107,7 @@ func TestComputeSignalSummary(t *testing.T) {
 		{RuleID: "SEC-AUTH-001", Status: rules.StatusUnknown},
 		{RuleID: "SEC-AUTH-001", Status: rules.StatusPass},
 	}
-	ss := ComputeSignalSummary(findings)
+	ss := ComputeSignalSummary(findings, nil)
 	if ss.ActionableFail != 1 {
 		t.Errorf("actionable_fail = %d, want 1", ss.ActionableFail)
 	}
@@ -144,6 +144,19 @@ func TestSignalSummaryInReport(t *testing.T) {
 	}
 	if vr.SignalSummary.InformationalDetection != 1 {
 		t.Errorf("report signal informational_detection = %d, want 1", vr.SignalSummary.InformationalDetection)
+	}
+}
+
+func TestClassifySignal_UsesRuleMetadataBeforeRuleIDHeuristics(t *testing.T) {
+	f := rules.Finding{RuleID: "CUSTOM-001", Status: rules.StatusFail}
+	metadata := map[string]rules.Rule{
+		"CUSTOM-001": {
+			ID:       "CUSTOM-001",
+			Category: "security",
+		},
+	}
+	if got := ClassifySignal(f, metadata); got != SignalActionableFail {
+		t.Errorf("CUSTOM-001 with security metadata = %q, want actionable_fail", got)
 	}
 }
 

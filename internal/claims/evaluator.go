@@ -49,6 +49,12 @@ func (e *Evaluator) Evaluate(claimSet *ClaimSet, execResult rules.ExecutionResul
 		}
 	}
 
+	sourceEvidence := buildSourceEvidenceFromExecution(claimSet, execResult)
+	graph := BuildMultiSourceClaimGraph(claimSet, sourceEvidence)
+	report.ClaimCandidates = ExtractClaimCandidates(claimSet, sourceEvidence)
+	report.VerifiedClaims = append([]VerifiedClaim(nil), graph.Claims...)
+	report.ClaimGraph = graph
+
 	return report
 }
 
@@ -125,14 +131,14 @@ func evaluateClaim(claim Claim, ruleResults map[string]rules.Finding) ClaimVerdi
 				linkType = "contradicts"
 			}
 			evidenceChain = append(evidenceChain, EvidenceLink{
-				ID:       ev.ID,
-				Type:     linkType,
-				File:     ev.File,
+				ID:        ev.ID,
+				Type:      linkType,
+				File:      ev.File,
 				LineStart: ev.LineStart,
 				LineEnd:   ev.LineEnd,
-				Symbol:   ev.Symbol,
-				FromRule: ruleID,
-				Relation: string(finding.Status) + " via " + ruleID,
+				Symbol:    ev.Symbol,
+				FromRule:  ruleID,
+				Relation:  string(finding.Status) + " via " + ruleID,
 			})
 		}
 	}

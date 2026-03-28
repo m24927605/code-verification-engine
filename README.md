@@ -24,6 +24,9 @@ cve verify --repo ~/my-api --mode skill_inference --output ./out
 
 # Run both verification and skill inference
 cve verify --repo ~/my-api --mode both --output ./out
+
+# Run the local V2 release gate
+cve release-gate
 ```
 
 ## Requirements
@@ -42,6 +45,7 @@ cve verify --repo ~/my-api --mode both --output ./out
 | `list-profiles`      | List available verification profiles             |
 | `list-claims`        | List available claim sets                        |
 | `list-skill-profiles`| List available skill inference profiles           |
+| `release-gate`       | Run the local V2 release gate                    |
 | `version`            | Print version info                               |
 
 ### `verify` Flags

@@ -84,6 +84,8 @@ func (e *Engine) Execute(rf *RuleFile, fs *FactSet, repoLanguages []string) Exec
 		result.Findings = append(result.Findings, finding)
 	}
 
+	FinalizeExecutionResult(rf, &result)
+
 	return result
 }
 

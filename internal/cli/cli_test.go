@@ -200,6 +200,13 @@ func TestRunListSkillProfiles(t *testing.T) {
 	}
 }
 
+func TestRunReleaseGateList(t *testing.T) {
+	code := Run([]string{"release-gate", "--list"})
+	if code != ExitSuccess {
+		t.Errorf("release-gate --list should exit 0, got %d", code)
+	}
+}
+
 func TestRunVerifyRefFlag(t *testing.T) {
 	code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--ref", "v1.0.0"})
 	if code == ExitInvalidInput {

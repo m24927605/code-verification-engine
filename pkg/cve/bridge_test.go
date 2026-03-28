@@ -3,6 +3,8 @@ package cve
 import (
 	"testing"
 
+	"github.com/verabase/code-verification-engine/internal/artifactsv2"
+	"github.com/verabase/code-verification-engine/internal/claims"
 	"github.com/verabase/code-verification-engine/internal/rules"
 	"github.com/verabase/code-verification-engine/internal/skills"
 )
@@ -113,6 +115,79 @@ func TestBridgeSkillReport_WithSignals(t *testing.T) {
 	}
 }
 
+func TestBridgeClaimReport(t *testing.T) {
+	r := &claims.ClaimReport{
+		SchemaVersion: "1.0.0",
+		ClaimSetName:  "backend-security",
+		TotalClaims:   1,
+		Verdicts: claims.VerdictSummary{
+			Verified: 1,
+			Passed:   1,
+			Failed:   0,
+			Unknown:  0,
+			Partial:  0,
+		},
+		Claims: []claims.ClaimVerdict{
+			{
+				ClaimID:           "architecture.multi_agent_pipeline",
+				Title:             "Multi-agent pipeline",
+				Category:          "architecture",
+				Status:            "pass",
+				Confidence:        "high",
+				VerificationLevel: "verified",
+				TrustBreakdown: claims.TrustBreakdown{
+					MachineTrusted:         2,
+					Advisory:               0,
+					HumanOrRuntimeRequired: 0,
+					EffectiveTrustClass:    "machine_trusted",
+				},
+				Summary: "verified from code and tests",
+				SupportingRules: []claims.RuleResult{
+					{RuleID: "ARCH-001", Status: "pass", Confidence: "high", Message: "rule hit"},
+				},
+				EvidenceChain: []claims.EvidenceLink{
+					{
+						ID:        "ev-1",
+						Type:      "supports",
+						File:      "main.go",
+						LineStart: 10,
+						LineEnd:   20,
+						Symbol:    "Run",
+						Excerpt:   "func Run() {}",
+						FromRule:  "ARCH-001",
+						Relation:  "supports",
+					},
+				},
+				UnknownReasons: []string{"none"},
+			},
+		},
+	}
+
+	out := bridgeClaimReport(r)
+	if out == nil {
+		t.Fatal("expected bridged claim report")
+	}
+	if out.SchemaVersion != "1.0.0" || out.ClaimSetName != "backend-security" || out.TotalClaims != 1 {
+		t.Fatalf("unexpected top-level bridged fields: %#v", out)
+	}
+	if out.Verdicts.Verified != 1 || out.Verdicts.Passed != 1 {
+		t.Fatalf("unexpected verdict summary: %#v", out.Verdicts)
+	}
+	if len(out.Claims) != 1 {
+		t.Fatalf("expected 1 claim verdict, got %d", len(out.Claims))
+	}
+	cv := out.Claims[0]
+	if cv.ClaimID != "architecture.multi_agent_pipeline" || cv.VerificationLevel != "verified" {
+		t.Fatalf("unexpected claim verdict: %#v", cv)
+	}
+	if len(cv.SupportingRules) != 1 || cv.SupportingRules[0].RuleID != "ARCH-001" {
+		t.Fatalf("supporting rule bridge mismatch: %#v", cv.SupportingRules)
+	}
+	if len(cv.EvidenceChain) != 1 || cv.EvidenceChain[0].ID != "ev-1" {
+		t.Fatalf("evidence chain bridge mismatch: %#v", cv.EvidenceChain)
+	}
+}
+
 // --- computeTrustGuidance ---
 
 func TestComputeTrustGuidance_Empty(t *testing.T) {
@@ -175,5 +250,291 @@ func TestComputeTrustGuidance_DefaultMixedTrust(t *testing.T) {
 	}
 	if g.Summary != "Findings contain mixed trust levels. Review recommended." {
 		t.Errorf("expected default summary, got %q", g.Summary)
+	}
+}
+
+func TestBridgeVerifiableBundle(t *testing.T) {
+	b := &artifactsv2.Bundle{
+		Report: artifactsv2.ReportArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+			TraceID:       "trace-abc123",
+			Summary: artifactsv2.ReportSummary{
+				OverallScore: 0.82,
+				RiskLevel:    "medium",
+				IssueCounts:  artifactsv2.IssueCountSummary{High: 1},
+			},
+			Skills: []artifactsv2.ReportSkillScore{{SkillID: "backend", Score: 0.9}},
+			Issues: []artifactsv2.Issue{{
+				ID:                 "iss-1",
+				Fingerprint:        "fp-1",
+				RuleFamily:         "sec_secret",
+				MergeBasis:         "same_symbol",
+				Category:           "security",
+				Title:              "Missing null check",
+				Severity:           "high",
+				Confidence:         0.9,
+				ConfidenceClass:    "high",
+				PolicyClass:        "machine_trusted",
+				Status:             "open",
+				EvidenceIDs:        []string{"ev-1"},
+				CounterEvidenceIDs: []string{"ev-2"},
+				SourceSummary:      artifactsv2.IssueSourceSummary{RuleCount: 1, DeterministicSources: 1, AgentSources: 0, TotalSources: 1, MultiSource: false},
+			}},
+		},
+		Evidence: artifactsv2.EvidenceArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+			Evidence: []artifactsv2.EvidenceRecord{
+				{
+					ID:              "ev-1",
+					Kind:            "rule_assertion",
+					Source:          "rule",
+					ProducerID:      "rule:SEC-001",
+					ProducerVersion: "1.0.0",
+					Repo:            "github.com/acme/repo",
+					Commit:          "abc123",
+					BoundaryHash:    "sha256:x",
+					FactQuality:     "proof",
+					Locations:       []artifactsv2.LocationRef{{RepoRelPath: "service.ts", StartLine: 10, EndLine: 10}},
+					Claims:          []string{"SEC-001"},
+					Payload:         map[string]any{"message": "x"},
+					CreatedAt:       "2026-03-27T12:00:00Z",
+				},
+				{
+					ID:              "ev-2",
+					Kind:            "counter_evidence",
+					Source:          "rule",
+					ProducerID:      "rule:SEC-002",
+					ProducerVersion: "1.0.0",
+					Repo:            "github.com/acme/repo",
+					Commit:          "abc123",
+					BoundaryHash:    "sha256:x",
+					FactQuality:     "structural",
+					Locations:       []artifactsv2.LocationRef{{RepoRelPath: "service.ts", StartLine: 12, EndLine: 12}},
+					Claims:          []string{"SEC-002"},
+					Payload:         map[string]any{"message": "counter"},
+					CreatedAt:       "2026-03-27T12:00:00Z",
+				},
+			},
+		},
+		Skills: artifactsv2.SkillsArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+			Skills: []artifactsv2.SkillScore{{
+				SkillID:                 "backend",
+				Score:                   0.9,
+				Confidence:              0.8,
+				ContributingIssueIDs:    []string{"iss-1"},
+				ContributingEvidenceIDs: []string{"ev-1"},
+			}},
+		},
+		Trace: artifactsv2.TraceArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			TraceID:       "trace-abc123",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+			Partial:       true,
+			Degraded:      true,
+			Errors:        []string{"analysis degraded"},
+			ScanBoundary:  artifactsv2.TraceScanBoundary{Mode: "repo", IncludedFiles: 10, ExcludedFiles: 0},
+			MigrationSummary: &artifactsv2.RuleMigrationSummary{
+				FindingBridgedCount: 1,
+				IssueNativeCount:    1,
+				RuleStates: map[string]string{
+					"QUAL-001": "finding_bridged",
+					"SEC-001":  "issue_native",
+				},
+				RuleReasons: map[string]string{
+					"QUAL-001": "v2 path still depends on finding-derived issue semantics",
+					"SEC-001":  "proof-grade secret evidence spans are deterministic and replayable",
+				},
+			},
+			ConfidenceCalibration: &artifactsv2.ConfidenceCalibration{
+				Version:                 "v2-release-blocking-calibration-1",
+				MachineTrustedThreshold: 0.85,
+				UnknownCap:              0.55,
+				AgentOnlyCap:            0.60,
+				RuleFamilyBaselines:     map[string]float64{"sec_secret": 0.94},
+				OrderingRules:           []string{"issue_native > seed_native > finding_bridged", "proof > structural > heuristic"},
+			},
+			Rules: []artifactsv2.RuleRun{
+				{ID: "SEC-001", Version: "1.0.0", MigrationState: "issue_native", MigrationReason: "proof-grade secret evidence spans are deterministic and replayable", TriggeredIssueIDs: []string{"iss-1"}, EmittedEvidenceIDs: []string{"ev-1"}},
+			},
+			SkippedRules: []artifactsv2.SkippedRuleTrace{
+				{ID: "SKIP-001", Reason: "capability_unsupported"},
+			},
+			ContextSelections: []artifactsv2.ContextSelectionRecord{
+				{
+					ID:                  "ctx-1",
+					TriggerType:         "issue",
+					TriggerID:           "iss-1",
+					SelectedEvidenceIDs: []string{"ev-1"},
+					EntityIDs:           []string{"fn-1"},
+					SelectedSpans:       []artifactsv2.LocationRef{{RepoRelPath: "service.ts", StartLine: 10, EndLine: 10}},
+					MaxFiles:            2,
+					MaxSpans:            4,
+					MaxTokens:           1200,
+					SelectionTrace:      []string{"trigger_reason:high_severity_review", "include_evidence:ev-1"},
+				},
+			},
+			Agents: []artifactsv2.AgentRun{
+				{ID: "agent-1", Kind: "security", IssueType: "security_review", Question: "Assess whether the high-severity issue is sufficiently supported by the selected bounded context.", IssueID: "iss-1", ContextSelectionID: "ctx-1", TriggerReason: "high_severity_review", InputEvidenceIDs: []string{"ev-1"}, MaxFiles: 2, MaxTokens: 1200, AllowSpeculation: false, Status: "planned"},
+			},
+			Derivations: []artifactsv2.IssueDerivation{
+				{IssueID: "iss-1", IssueFingerprint: "fp-1", DerivedFromEvidenceIDs: []string{"ev-1"}},
+			},
+		},
+		SummaryMD: "summary",
+		Signature: artifactsv2.SignatureArtifact{
+			Version:        "1.0.0",
+			SignedBy:       "verabase",
+			Timestamp:      "2026-03-27T12:00:00Z",
+			ArtifactHashes: map[string]string{"report.json": "sha256:x"},
+			BundleHash:     "sha256:y",
+		},
+	}
+	out := bridgeVerifiableBundle(b)
+	if out.Report.TraceID != "trace-abc123" {
+		t.Fatalf("unexpected report trace id %q", out.Report.TraceID)
+	}
+	if len(out.Evidence.Evidence) != 2 || out.Evidence.Evidence[0].ID != "ev-1" || out.Evidence.Evidence[1].ID != "ev-2" {
+		t.Fatalf("unexpected evidence bridge output")
+	}
+	if len(out.Skills.Skills) != 1 || out.Skills.Skills[0].SkillID != "backend" {
+		t.Fatalf("unexpected skills bridge output")
+	}
+	if out.Signature.BundleHash != "sha256:y" {
+		t.Fatalf("unexpected signature bundle hash %q", out.Signature.BundleHash)
+	}
+	if !out.Trace.Partial || !out.Trace.Degraded {
+		t.Fatalf("expected trace partial/degraded flags to bridge")
+	}
+	if out.Trace.MigrationSummary == nil || out.Trace.MigrationSummary.IssueNativeCount != 1 || out.Trace.MigrationSummary.RuleStates["QUAL-001"] != "finding_bridged" {
+		t.Fatalf("unexpected migration summary bridge output: %#v", out.Trace.MigrationSummary)
+	}
+	if out.Trace.MigrationSummary.RuleReasons["SEC-001"] == "" {
+		t.Fatalf("expected migration summary reasons to bridge: %#v", out.Trace.MigrationSummary)
+	}
+	if out.Trace.ConfidenceCalibration == nil || out.Trace.ConfidenceCalibration.RuleFamilyBaselines["sec_secret"] != 0.94 {
+		t.Fatalf("unexpected confidence calibration bridge output: %#v", out.Trace.ConfidenceCalibration)
+	}
+	if len(out.Report.Issues) != 1 || len(out.Report.Issues[0].CounterEvidenceIDs) != 1 || out.Report.Issues[0].CounterEvidenceIDs[0] != "ev-2" {
+		t.Fatalf("unexpected counter evidence bridge output: %#v", out.Report.Issues)
+	}
+	if out.Report.Issues[0].Fingerprint != "fp-1" {
+		t.Fatalf("unexpected fingerprint bridge output: %#v", out.Report.Issues[0])
+	}
+	if out.Report.Issues[0].RuleFamily != "sec_secret" {
+		t.Fatalf("unexpected rule family bridge output: %#v", out.Report.Issues[0])
+	}
+	if out.Report.Issues[0].MergeBasis != "same_symbol" {
+		t.Fatalf("unexpected merge basis bridge output: %#v", out.Report.Issues[0])
+	}
+	if out.Report.Issues[0].ConfidenceClass != "high" || out.Report.Issues[0].PolicyClass != "machine_trusted" {
+		t.Fatalf("unexpected confidence/policy bridge output: %#v", out.Report.Issues[0])
+	}
+	if out.Report.Issues[0].SourceSummary.RuleCount != 1 || out.Report.Issues[0].SourceSummary.TotalSources != 1 {
+		t.Fatalf("unexpected source summary bridge output: %#v", out.Report.Issues[0].SourceSummary)
+	}
+	if len(out.Trace.SkippedRules) != 1 || out.Trace.SkippedRules[0].ID != "SKIP-001" {
+		t.Fatalf("unexpected skipped rule bridge output: %#v", out.Trace.SkippedRules)
+	}
+	if len(out.Trace.ContextSelections) != 1 || out.Trace.ContextSelections[0].TriggerID != "iss-1" {
+		t.Fatalf("unexpected context selection bridge output: %#v", out.Trace.ContextSelections)
+	}
+	if out.Trace.ContextSelections[0].ID != "ctx-1" || out.Trace.ContextSelections[0].MaxSpans != 4 || len(out.Trace.ContextSelections[0].EntityIDs) != 1 {
+		t.Fatalf("unexpected context selection contract bridge output: %#v", out.Trace.ContextSelections[0])
+	}
+	if len(out.Trace.Agents) != 1 || out.Trace.Agents[0].ContextSelectionID != "ctx-1" || out.Trace.Agents[0].IssueID != "iss-1" {
+		t.Fatalf("unexpected planned agent bridge output: %#v", out.Trace.Agents)
+	}
+	if out.Trace.Agents[0].IssueType != "security_review" || out.Trace.Agents[0].Question == "" {
+		t.Fatalf("unexpected planned agent task bridge output: %#v", out.Trace.Agents[0])
+	}
+	if len(out.Trace.Rules) != 1 || out.Trace.Rules[0].MigrationState != "issue_native" {
+		t.Fatalf("unexpected trace rule bridge output: %#v", out.Trace.Rules)
+	}
+	if out.Trace.Rules[0].MigrationReason == "" {
+		t.Fatalf("expected trace rule migration reason to bridge: %#v", out.Trace.Rules)
+	}
+	if len(out.Trace.Derivations) != 1 || out.Trace.Derivations[0].IssueFingerprint != "fp-1" {
+		t.Fatalf("unexpected derivation bridge output: %#v", out.Trace.Derivations)
+	}
+}
+
+func TestBridgeClaimsProjection(t *testing.T) {
+	in := &artifactsv2.ClaimsProjectionArtifacts{
+		Claims: artifactsv2.ClaimsArtifact{
+			SchemaVersion: "1.0.0",
+			Repository:    artifactsv2.ClaimRepositoryRef{Path: "/repo", Commit: "abc123"},
+			Claims: []artifactsv2.ClaimRecord{
+				{
+					ClaimID:               "architecture.multi_agent_pipeline",
+					Title:                 "Multi-agent pipeline exists",
+					Category:              "architecture",
+					ClaimType:             "architecture",
+					Status:                "accepted",
+					SupportLevel:          "verified",
+					Confidence:            0.93,
+					SourceOrigins:         []string{"code_inferred", "readme_extracted"},
+					SupportingEvidenceIDs: []string{"src-1", "src-2"},
+					Reason:                "code-backed by multiple sources",
+					ProjectionEligible:    true,
+				},
+			},
+			Summary: artifactsv2.ClaimSummary{Verified: 1},
+		},
+		Profile: artifactsv2.ProfileArtifact{
+			SchemaVersion: "1.0.0",
+			Repository:    artifactsv2.ClaimRepositoryRef{Path: "/repo", Commit: "abc123"},
+			Highlights: []artifactsv2.CapabilityHighlight{
+				{HighlightID: "hl-1", Title: "Built a multi-agent pipeline", SupportLevel: "verified", ClaimIDs: []string{"architecture.multi_agent_pipeline"}, SupportingEvidenceIDs: []string{"src-1"}},
+			},
+			CapabilityAreas: []artifactsv2.CapabilityArea{
+				{AreaID: "architecture", Title: "Architecture", ClaimIDs: []string{"architecture.multi_agent_pipeline"}},
+			},
+			Technologies: []string{"go", "typescript"},
+			ClaimIDs:     []string{"architecture.multi_agent_pipeline"},
+		},
+		ResumeInput: artifactsv2.ResumeInputArtifact{
+			SchemaVersion:     "1.0.0",
+			Profile:           artifactsv2.ProfileArtifact{SchemaVersion: "1.0.0", Repository: artifactsv2.ClaimRepositoryRef{Path: "/repo", Commit: "abc123"}},
+			VerifiedClaims:    []artifactsv2.ResumeClaimStub{{ClaimID: "architecture.multi_agent_pipeline", Title: "Multi-agent pipeline exists", SupportLevel: "verified", Confidence: 0.93}},
+			TechnologySummary: []string{"go", "typescript"},
+			EvidenceReferences: []artifactsv2.EvidenceReference{
+				{EvidenceID: "src-1", ClaimIDs: []string{"architecture.multi_agent_pipeline"}},
+			},
+			SynthesisConstraints: artifactsv2.SynthesisConstraints{
+				AllowUnsupportedClaims:        false,
+				AllowClaimInvention:           false,
+				AllowContradictionSuppression: false,
+			},
+		},
+	}
+
+	out := bridgeClaimsProjection(in)
+	if out == nil {
+		t.Fatal("expected claims projection output")
+	}
+	if len(out.Claims.Claims) != 1 || out.Claims.Claims[0].ClaimID != "architecture.multi_agent_pipeline" {
+		t.Fatalf("unexpected bridged claim records: %#v", out.Claims.Claims)
+	}
+	if len(out.Profile.Highlights) != 1 || out.Profile.Highlights[0].HighlightID != "hl-1" {
+		t.Fatalf("unexpected bridged profile highlights: %#v", out.Profile.Highlights)
+	}
+	if len(out.ResumeInput.EvidenceReferences) != 1 || out.ResumeInput.EvidenceReferences[0].EvidenceID != "src-1" {
+		t.Fatalf("unexpected bridged resume evidence refs: %#v", out.ResumeInput.EvidenceReferences)
 	}
 }

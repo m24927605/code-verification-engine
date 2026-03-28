@@ -104,6 +104,7 @@ type ScanInput struct {
 type ReportInput struct {
 	Partial      bool
 	Findings     []rules.Finding
+	RuleMetadata map[string]rules.Rule
 	SkippedRules []rules.SkippedRule
 	Errors       []string
 	Degraded     bool // true if any analyzer runtime was degraded
@@ -183,7 +184,7 @@ func GenerateVerificationReport(input ReportInput) VerificationReport {
 			capSummary.Unsupported++
 		}
 	}
-	signalSummary := ComputeSignalSummary(input.Findings)
+	signalSummary := ComputeSignalSummary(input.Findings, input.RuleMetadata)
 
 	var fqSummary FactQualitySummary
 	for _, f := range input.Findings {

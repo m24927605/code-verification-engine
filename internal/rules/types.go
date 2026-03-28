@@ -81,6 +81,17 @@ const (
 	TrustHumanOrRuntimeRequired TrustClass = "human_or_runtime_required"
 )
 
+// MigrationState tracks how far a rule family has progressed along the v2
+// native rule-to-issue migration path.
+type MigrationState string
+
+const (
+	MigrationLegacyOnly     MigrationState = "legacy_only"
+	MigrationFindingBridged MigrationState = "finding_bridged"
+	MigrationSeedNative     MigrationState = "seed_native"
+	MigrationIssueNative    MigrationState = "issue_native"
+)
+
 // Finding represents the result of evaluating a single rule.
 type Finding struct {
 	RuleID            string            `json:"rule_id"`
@@ -112,9 +123,29 @@ type SkippedRule struct {
 	Reason string `json:"reason"`
 }
 
+// IssueSeed is the normalized deterministic issue-aggregation input produced
+// by the rules layer. It is the migration bridge from finding-first execution
+// toward issue-candidate-first verification.
+type IssueSeed struct {
+	RuleID      string   `json:"rule_id"`
+	Title       string   `json:"title"`
+	Source      string   `json:"source"`
+	Category    string   `json:"category"`
+	Severity    string   `json:"severity"`
+	Status      string   `json:"status"`
+	Confidence  float64  `json:"confidence"`
+	Quality     float64  `json:"quality"`
+	File        string   `json:"file"`
+	Symbol      string   `json:"symbol,omitempty"`
+	StartLine   int      `json:"start_line"`
+	EndLine     int      `json:"end_line"`
+	EvidenceIDs []string `json:"evidence_ids,omitempty"`
+}
+
 // ExecutionResult holds the complete result of rule evaluation.
 type ExecutionResult struct {
 	Findings     []Finding     `json:"findings"`
+	IssueSeeds   []IssueSeed   `json:"issue_seeds,omitempty"`
 	SkippedRules []SkippedRule `json:"skipped_rules"`
 }
 

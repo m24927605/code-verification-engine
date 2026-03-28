@@ -211,10 +211,10 @@ func TestEvaluateClaim_EvidenceChain(t *testing.T) {
 
 func TestEvaluateClaim_FailEvidenceContradicts(t *testing.T) {
 	claim := Claim{
-		ID:      "test.contradict",
-		Title:   "Contradict",
+		ID:       "test.contradict",
+		Title:    "Contradict",
 		Category: "testing",
-		RuleIDs: []string{"RULE-1"},
+		RuleIDs:  []string{"RULE-1"},
 	}
 
 	ruleResults := map[string]rules.Finding{
@@ -501,7 +501,7 @@ func TestAdvisoryFindingsNeverVerified(t *testing.T) {
 				Status:            rules.StatusPass,
 				Confidence:        rules.ConfidenceHigh,
 				VerificationLevel: rules.VerificationVerified, // Even if set to verified
-				TrustClass:        rules.TrustAdvisory,         // Advisory must NOT count
+				TrustClass:        rules.TrustAdvisory,        // Advisory must NOT count
 			},
 		},
 	}

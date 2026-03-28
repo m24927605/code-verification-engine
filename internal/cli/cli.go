@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/verabase/code-verification-engine/internal/claims"
 	"github.com/verabase/code-verification-engine/internal/engine"
 	"github.com/verabase/code-verification-engine/internal/interpret"
+	"github.com/verabase/code-verification-engine/internal/releasegate"
 	"github.com/verabase/code-verification-engine/internal/rules"
 	"github.com/verabase/code-verification-engine/internal/skills"
 )
@@ -43,6 +46,8 @@ func Run(args []string) int {
 		return runListClaims()
 	case "list-skill-profiles":
 		return runListSkillProfiles()
+	case "release-gate":
+		return runReleaseGate(args[1:])
 	case "version":
 		fmt.Printf("cve version %s\n", Version)
 		return ExitSuccess
@@ -204,6 +209,39 @@ func runListSkillProfiles() int {
 	return ExitSuccess
 }
 
+func runReleaseGate(args []string) int {
+	fs := flag.NewFlagSet("release-gate", flag.ContinueOnError)
+	listOnly := fs.Bool("list", false, "Print the required local release gate commands without executing them")
+	if err := fs.Parse(args); err != nil {
+		return ExitInvalidInput
+	}
+
+	if *listOnly {
+		for _, step := range releasegate.DefaultSteps() {
+			fmt.Println(strings.Join(step.Command, " "))
+		}
+		return ExitSuccess
+	}
+
+	result := releasegate.Run(context.Background(), releasegate.DefaultExecutor)
+	for _, step := range result.Steps {
+		if step.Passed {
+			fmt.Fprintf(os.Stderr, "[OK] %s: %s\n", step.Step.Name, strings.Join(step.Step.Command, " "))
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "[FAIL] %s: %s\n", step.Step.Name, strings.Join(step.Step.Command, " "))
+		if step.Output != "" {
+			fmt.Fprintln(os.Stderr, step.Output)
+		}
+		if step.Err != nil {
+			fmt.Fprintf(os.Stderr, "[ERROR] %v\n", step.Err)
+		}
+		return ExitAnalysisFailure
+	}
+
+	return ExitSuccess
+}
+
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage: cve <command> [flags]
 
@@ -212,6 +250,7 @@ Commands:
   list-profiles        List available built-in verification profiles
   list-claims          List available claim sets for claim-centric verification
   list-skill-profiles  List available skill inference profiles
+  release-gate         Run the local V2 release gate checks
   version              Print version and build metadata
 
 Run 'cve <command> -help' for command-specific flags.
@@ -222,5 +261,6 @@ Example:
   cve verify --repo ~/my-api --claims backend-security --output ./out
   cve verify --repo ~/my-api --mode skill_inference --output ./out
   cve verify --repo ~/my-api --mode both --skill-profile github-engineer-core --output ./out
+  cve release-gate
 `)
 }

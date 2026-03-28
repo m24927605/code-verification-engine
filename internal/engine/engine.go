@@ -15,7 +15,9 @@ import (
 	jsanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/js"
 	pyanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/python"
 	tsanalyzer "github.com/verabase/code-verification-engine/internal/analyzers/ts"
+	"github.com/verabase/code-verification-engine/internal/artifactsv2"
 	"github.com/verabase/code-verification-engine/internal/claims"
+	"github.com/verabase/code-verification-engine/internal/claimsources"
 	"github.com/verabase/code-verification-engine/internal/evidencegraph"
 	"github.com/verabase/code-verification-engine/internal/facts"
 	"github.com/verabase/code-verification-engine/internal/git"
@@ -39,34 +41,41 @@ type PluginAnalyzer struct {
 
 // Config holds engine execution configuration.
 type Config struct {
-	Ctx          context.Context // caller context for cancellation/timeout
-	RepoPath     string
-	Ref          string
-	Profile      string // built-in profile name
-	OutputDir    string
-	Format       string
-	Strict       bool
-	Progress     io.Writer             // stderr for progress messages
-	Interpret    bool                  // Enable LLM interpretation layer
-	LLMProvider  interpret.LLMProvider // LLM provider (nil = skip interpretation)
-	ClaimSet     string                // optional claim set name (alternative/complement to Profile)
-	Hooks        *ScanHooks            // optional extension hooks
-	Plugins      []PluginAnalyzer      // optional external analyzer plugins
-	Mode         string                // execution mode: verification, skill_inference, both (default: verification)
-	SkillProfile string                // skill profile name (default: github-engineer-core)
+	Ctx           context.Context // caller context for cancellation/timeout
+	RepoPath      string
+	Ref           string
+	Profile       string // built-in profile name
+	OutputDir     string
+	Format        string
+	Strict        bool
+	Progress      io.Writer             // stderr for progress messages
+	Interpret     bool                  // Enable LLM interpretation layer
+	LLMProvider   interpret.LLMProvider // LLM provider (nil = skip interpretation)
+	AgentRuntime  bool                  // Enable bounded non-deterministic agent execution
+	AgentProvider interpret.LLMProvider // Agent runtime provider (nil = skip execution)
+	ClaimSet      string                // optional claim set name (alternative/complement to Profile)
+	Hooks         *ScanHooks            // optional extension hooks
+	Plugins       []PluginAnalyzer      // optional external analyzer plugins
+	Mode          string                // execution mode: verification, skill_inference, both (default: verification)
+	SkillProfile  string                // skill profile name (default: github-engineer-core)
 }
 
 // Result holds the engine execution result.
 type Result struct {
-	ExitCode          int
-	Scan              report.ScanReport
-	Report            report.VerificationReport
-	Accounting        *ScanAccounting              // per-file analysis accounting
-	ClaimReport       *claims.ClaimReport          // nil if no claim set specified
-	EvidenceGraph     *evidencegraph.EvidenceGraph // evidence relationship graph
-	InterpretedReport *interpret.InterpretedReport // nil if interpretation disabled
-	SkillReport       *skills.Report               // nil if mode does not include skill_inference
-	Errors            []string
+	ExitCode                  int
+	Scan                      report.ScanReport
+	Report                    report.VerificationReport
+	Accounting                *ScanAccounting                // per-file analysis accounting
+	ClaimReport               *claims.ClaimReport            // nil if no claim set specified
+	EvidenceGraph             *evidencegraph.EvidenceGraph   // evidence relationship graph
+	InterpretedReport         *interpret.InterpretedReport   // nil if interpretation disabled
+	SkillReport               *skills.Report                 // nil if mode does not include skill_inference
+	VerifiableIssueSet        *artifactsv2.IssueCandidateSet // canonical deterministic v2 verification product
+	VerifiableEvidenceStore   *artifactsv2.EvidenceStore     // intermediate evidence-first store for v2 compatibility path
+	VerifiableIssueCandidates []artifactsv2.IssueCandidate   // intermediate issue candidates for v2 compatibility path
+	VerifiableBundle          *artifactsv2.Bundle            // nil if verifiable bundle generation failed or is disabled
+	VerifiableClaimsArtifacts *artifactsv2.ClaimsProjectionArtifacts
+	Errors                    []string
 }
 
 // cancelledResult returns a Result for a cancelled/timed-out context.
@@ -363,14 +372,9 @@ func Run(cfg Config) Result {
 
 	execResult := ruleEngine.Execute(ruleFile, factSet, meta.Languages)
 
-	// Populate stable evidence IDs, assign trust class, and fire finding hooks
+	// Emit hooks after rules-layer normalization has already finalized
+	// evidence IDs, trust class, and issue seeds.
 	for i := range execResult.Findings {
-		for j := range execResult.Findings[i].Evidence {
-			execResult.Findings[i].Evidence[j].ID = rules.EvidenceID(execResult.Findings[i].Evidence[j])
-		}
-		// Assign trust class and enforce trust boundary invariants
-		rules.NormalizeTrust(&execResult.Findings[i])
-		// Hook: OnFindingProduced
 		if cfg.Hooks != nil && cfg.Hooks.OnFindingProduced != nil {
 			cfg.Hooks.OnFindingProduced(execResult.Findings[i])
 		}
@@ -381,7 +385,11 @@ func Run(cfg Config) Result {
 	fmt.Fprintf(progress, "[INFO] evidence graph: %d nodes, %d edges, %d files\n",
 		evGraph.NodeCount(), evGraph.EdgeCount(), len(evGraph.UniqueFiles()))
 
-	sigSummary := report.ComputeSignalSummary(execResult.Findings)
+	ruleIndex := make(map[string]rules.Rule, len(ruleFile.Rules))
+	for _, rule := range ruleFile.Rules {
+		ruleIndex[rule.ID] = rule
+	}
+	sigSummary := report.ComputeSignalSummary(execResult.Findings, ruleIndex)
 	fmt.Fprintf(progress, "[INFO] findings: pass=%d fail=%d (actionable=%d advisory=%d informational=%d) unknown=%d\n",
 		countStatus(execResult.Findings, rules.StatusPass),
 		countStatus(execResult.Findings, rules.StatusFail),
@@ -417,10 +425,12 @@ func Run(cfg Config) Result {
 	// Track whether any analyzer runtime was degraded (e.g., python3 unavailable).
 	// This must be surfaced in the report so consumers know analysis quality.
 	analysisDegraded := !pyanalyzer.PythonASTAvailable() && containsLanguage(meta.Languages, "python")
+	ruleMetadata := artifactsv2.RuleMetadataFromRuleFile(ruleFile)
 
 	verReport := report.GenerateVerificationReport(report.ReportInput{
 		Partial:      partial,
 		Findings:     execResult.Findings,
+		RuleMetadata: ruleIndex,
 		SkippedRules: execResult.SkippedRules,
 		Errors:       analyzerErrors,
 		Degraded:     analysisDegraded,
@@ -573,6 +583,56 @@ func Run(cfg Config) Result {
 			skillReport.Summary.Observed, skillReport.Summary.Inferred, skillReport.Summary.Unsupported)
 	}
 
+	// Compatibility bridge: emit the v2 verifiable artifact bundle under a
+	// dedicated subdirectory so the current public output contract remains intact
+	// while the engine transitions to the new evidence-first model.
+	var agentExecutor artifactsv2.AgentExecutor
+	if cfg.AgentRuntime && cfg.AgentProvider != nil {
+		agentExecutor = NewLLMAgentExecutor(ctx, cfg.AgentProvider, scanReport, "verabase@dev")
+	}
+	v2Build, err := artifactsv2.BuildCompatArtifacts(artifactsv2.CompatBuildInput{
+		Scan: scanReport,
+		Verification: artifactsv2.VerificationSource{
+			ReportSchemaVersion: verReport.ReportSchemaVersion,
+			Findings:            append([]rules.Finding(nil), execResult.Findings...),
+			IssueSeeds:          artifactsv2.IssueSeedsFromRuleSeeds(execResult.IssueSeeds),
+			RuleMetadata:        ruleMetadata,
+			SkippedRules:        append([]rules.SkippedRule(nil), execResult.SkippedRules...),
+			Partial:             partial,
+			Degraded:            analysisDegraded,
+			AnalyzerStatuses:    copyStringMap(analyzerStatuses),
+			Errors:              append([]string(nil), analyzerErrors...),
+		},
+		AgentExecutor: agentExecutor,
+		SkillReport:   skillReport,
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build verifiable bundle: %v", err)}}
+	}
+	v2Bundle := v2Build.Bundle
+	claimArtifacts, err := buildClaimsProfileResumeArtifacts(meta, claimSet, execResult, skillReport)
+	if err != nil {
+		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build claims/profile/resume artifacts: %v", err)}}
+	}
+	v2OutputDir := filepath.Join(cfg.OutputDir, "verifiable")
+	if err := artifactsv2.WriteBundle(v2OutputDir, &v2Bundle, "verabase"); err != nil {
+		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write verifiable bundle: %v", err)}}
+	}
+	if claimArtifacts != nil {
+		if err := artifactsv2.WriteClaimsProfileResumeArtifacts(v2OutputDir, *claimArtifacts); err != nil {
+			return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write claims/profile/resume artifacts: %v", err)}}
+		}
+	}
+	fmt.Fprintf(progress, "[INFO] verifiable bundle written to: %s\n", v2OutputDir)
+
+	// Preserve the historical engine contract: when a claim set is requested and
+	// evaluation completed, Result.ClaimReport must be populated even if later
+	// projection work does not consume it.
+	if claimSet != nil && claimReport == nil {
+		claimReport = claims.NewEvaluator().Evaluate(claimSet, execResult)
+	}
+
 	exitCode := 0
 	if partial {
 		exitCode = 6
@@ -584,15 +644,20 @@ func Run(cfg Config) Result {
 	}
 
 	return Result{
-		ExitCode:          exitCode,
-		Scan:              scanReport,
-		Report:            verReport,
-		Accounting:        &accounting,
-		ClaimReport:       claimReport,
-		EvidenceGraph:     evGraph,
-		InterpretedReport: interpretedReport,
-		SkillReport:       skillReport,
-		Errors:            analyzerErrors,
+		ExitCode:                  exitCode,
+		Scan:                      scanReport,
+		Report:                    verReport,
+		Accounting:                &accounting,
+		ClaimReport:               claimReport,
+		EvidenceGraph:             evGraph,
+		InterpretedReport:         interpretedReport,
+		SkillReport:               skillReport,
+		VerifiableIssueSet:        v2Build.IssueSet,
+		VerifiableEvidenceStore:   v2Build.EvidenceStore,
+		VerifiableIssueCandidates: append([]artifactsv2.IssueCandidate(nil), v2Build.IssueCandidates...),
+		VerifiableBundle:          &v2Bundle,
+		VerifiableClaimsArtifacts: claimArtifacts,
+		Errors:                    analyzerErrors,
 	}
 }
 
@@ -726,6 +791,129 @@ func languageExtensions(lang string) []string {
 	}
 }
 
+func buildClaimsProfileResumeArtifacts(meta *repo.RepoMetadata, claimSet *claims.ClaimSet, execResult rules.ExecutionResult, skillReport *skills.Report) (*artifactsv2.ClaimsProjectionArtifacts, error) {
+	if meta == nil {
+		return nil, nil
+	}
+	descriptors := claimsources.DiscoverFromRepo(meta)
+	sourceEvidence := claimsources.ExtractFromRepo(meta, descriptors)
+	claimEvidence := adaptClaimSourceEvidence(sourceEvidence)
+	graph := claims.BuildMultiSourceClaimGraph(claimSet, claimEvidence)
+	if graph == nil || len(graph.Claims) == 0 {
+		return nil, nil
+	}
+	artifacts, err := artifactsv2.BuildClaimsProfileResumeArtifacts(artifactsv2.ClaimsProjectionInput{
+		Repository: artifactsv2.ClaimRepositoryRef{
+			Path:   meta.RepoPath,
+			Commit: meta.CommitSHA,
+		},
+		Claims:       adaptVerifiedClaims(graph.Claims),
+		Technologies: collectClaimProjectionTechnologies(meta, skillReport, execResult),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &artifacts, nil
+}
+
+func adaptClaimSourceEvidence(records []claimsources.SourceEvidenceRecord) []claims.SourceEvidenceRecord {
+	out := make([]claims.SourceEvidenceRecord, 0, len(records))
+	for _, record := range records {
+		spans := make([]claims.SourceSpan, 0, len(record.Spans))
+		for _, span := range record.Spans {
+			spans = append(spans, claims.SourceSpan{
+				File:      record.Path,
+				LineStart: span.StartLine,
+				LineEnd:   span.EndLine,
+			})
+		}
+		out = append(out, claims.SourceEvidenceRecord{
+			EvidenceID: record.EvidenceID,
+			SourceType: string(record.SourceType),
+			Origin:     claimOriginForSourceType(record.SourceType),
+			Producer:   record.Producer,
+			Path:       record.Path,
+			Kind:       record.Kind,
+			Summary:    record.Summary,
+			Spans:      spans,
+			EntityIDs:  append([]string(nil), record.EntityIDs...),
+			Metadata:   copyStringMap(record.Metadata),
+		})
+	}
+	return out
+}
+
+func claimOriginForSourceType(sourceType claimsources.SourceType) string {
+	switch sourceType {
+	case claimsources.SourceTypeReadme:
+		return string(claims.ClaimOriginReadmeExtracted)
+	case claimsources.SourceTypeDoc:
+		return string(claims.ClaimOriginDocExtracted)
+	case claimsources.SourceTypeCode:
+		return string(claims.ClaimOriginCodeInferred)
+	case claimsources.SourceTypeTest:
+		return string(claims.ClaimOriginTestInferred)
+	case claimsources.SourceTypeEval:
+		return string(claims.ClaimOriginEvalInferred)
+	default:
+		return string(claims.ClaimOriginRuleInferred)
+	}
+}
+
+func adaptVerifiedClaims(in []claims.VerifiedClaim) []artifactsv2.ClaimRecord {
+	out := make([]artifactsv2.ClaimRecord, 0, len(in))
+	for _, claim := range in {
+		out = append(out, artifactsv2.ClaimRecord{
+			ClaimID:                  claim.ClaimID,
+			Title:                    claim.Title,
+			Category:                 claim.Category,
+			ClaimType:                claim.ClaimType,
+			Status:                   claim.Status,
+			SupportLevel:             claim.SupportLevel,
+			Confidence:               claim.Confidence,
+			SourceOrigins:            append([]string(nil), claim.SourceOrigins...),
+			SupportingEvidenceIDs:    append([]string(nil), claim.SupportingEvidenceIDs...),
+			ContradictoryEvidenceIDs: append([]string(nil), claim.ContradictoryEvidenceIDs...),
+			Reason:                   claim.Reason,
+			ProjectionEligible:       claim.SupportLevel == string(claims.ClaimSupportVerified) || claim.SupportLevel == string(claims.ClaimSupportStronglySupported),
+		})
+	}
+	return out
+}
+
+func collectClaimProjectionTechnologies(meta *repo.RepoMetadata, skillReport *skills.Report, execResult rules.ExecutionResult) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(v string) {
+		v = strings.TrimSpace(strings.ToLower(v))
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	if meta != nil {
+		for _, lang := range meta.Languages {
+			add(lang)
+		}
+	}
+	if skillReport != nil {
+		for _, framework := range skillReport.Frameworks {
+			add(framework)
+		}
+		for _, technology := range skillReport.Technologies {
+			add(technology.Name)
+		}
+	}
+	for _, finding := range execResult.Findings {
+		add(finding.RuleID)
+	}
+	return out
+}
+
 func collectEvidenceSnippets(scanDir string, findings []rules.Finding) map[string]string {
 	snippets := make(map[string]string)
 	seen := make(map[string]bool)
@@ -774,4 +962,15 @@ func writeJSONFile(path string, v interface{}) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }

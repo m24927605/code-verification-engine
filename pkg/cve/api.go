@@ -39,6 +39,15 @@ type VerifyOutput struct {
 	// Skills is populated when mode includes skill_inference. Zero-value when verification-only.
 	Skills SkillOutput `json:"skills,omitempty"`
 
+	// Claims is populated when a claim set is requested and evaluated.
+	Claims *ClaimReportOutput `json:"claims,omitempty"`
+
+	// ClaimsProjection is the multi-source claims/profile/resume artifact set.
+	ClaimsProjection *ClaimsProjectionOutput `json:"claims_projection,omitempty"`
+
+	// Verifiable is the additive evidence-first artifact bundle output.
+	Verifiable *VerifiableOutput `json:"verifiable,omitempty"`
+
 	Errors []string `json:"errors,omitempty"`
 }
 
@@ -100,11 +109,13 @@ type LLMProvider interface {
 type Option func(*engineConfig)
 
 type engineConfig struct {
-	progress    io.Writer
-	hooks       []ScanHook
-	interpret   bool
-	llmProvider LLMProvider
-	plugins     []AnalyzerPlugin
+	progress      io.Writer
+	hooks         []ScanHook
+	interpret     bool
+	llmProvider   LLMProvider
+	agentRuntime  bool
+	agentProvider LLMProvider
+	plugins       []AnalyzerPlugin
 }
 
 // WithProgress sets the progress writer (default: discard).
@@ -122,6 +133,16 @@ func WithInterpretation(provider LLMProvider) Option {
 	return func(c *engineConfig) {
 		c.interpret = true
 		c.llmProvider = provider
+	}
+}
+
+// WithAgentRuntime enables the bounded non-deterministic agent runtime with
+// the given provider. Agent outputs are normalized back into the verifiable
+// evidence-first pipeline.
+func WithAgentRuntime(provider LLMProvider) Option {
+	return func(c *engineConfig) {
+		c.agentRuntime = true
+		c.agentProvider = provider
 	}
 }
 

@@ -27,8 +27,8 @@ type SignalSummary struct {
 }
 
 // ClassifySignal determines the signal class of a finding based on its
-// rule ID, status, severity category, and evidence scope.
-func ClassifySignal(f rules.Finding) SignalClass {
+// rule ID, rule metadata, and evidence scope.
+func ClassifySignal(f rules.Finding, metadata map[string]rules.Rule) SignalClass {
 	// Non-fail/non-unknown findings are just pass
 	if f.Status == rules.StatusUnknown {
 		return SignalUnknown
@@ -48,8 +48,8 @@ func ClassifySignal(f rules.Finding) SignalClass {
 		return SignalAdvisoryFail
 	}
 
-	// Classify by rule category derived from ID prefix
-	cat := ruleCategory(f.RuleID)
+	rule := metadata[f.RuleID]
+	cat := rules.CanonicalIssueCategory(rule, f.RuleID)
 	switch cat {
 	case "security":
 		return SignalActionableFail
@@ -75,28 +75,6 @@ func ClassifySignal(f rules.Finding) SignalClass {
 // IsGOFRule returns true if the rule ID belongs to a GoF pattern detection rule.
 func IsGOFRule(ruleID string) bool {
 	return strings.HasPrefix(ruleID, "GOF-")
-}
-
-// ruleCategory infers the category from the rule ID prefix.
-func ruleCategory(ruleID string) string {
-	switch {
-	case strings.HasPrefix(ruleID, "SEC-"):
-		return "security"
-	case strings.HasPrefix(ruleID, "ARCH-"):
-		return "architecture"
-	case strings.HasPrefix(ruleID, "QUAL-"):
-		return "quality"
-	case strings.HasPrefix(ruleID, "TEST-"):
-		return "testing"
-	case strings.HasPrefix(ruleID, "FE-XSS-"), strings.HasPrefix(ruleID, "FE-TOKEN-"),
-		strings.HasPrefix(ruleID, "FE-ENV-"), strings.HasPrefix(ruleID, "FE-AUTH-"),
-		strings.HasPrefix(ruleID, "FE-CSP-"):
-		return "frontend_security"
-	case strings.HasPrefix(ruleID, "FE-"):
-		return "frontend_quality"
-	default:
-		return ""
-	}
 }
 
 // isActionableArchRule returns true for architecture rules that represent
@@ -125,10 +103,10 @@ func allEvidenceFromTestScope(evidence []rules.Evidence) bool {
 }
 
 // ComputeSignalSummary computes the signal summary from a list of findings.
-func ComputeSignalSummary(findings []rules.Finding) SignalSummary {
+func ComputeSignalSummary(findings []rules.Finding, metadata map[string]rules.Rule) SignalSummary {
 	var ss SignalSummary
 	for _, f := range findings {
-		switch ClassifySignal(f) {
+		switch ClassifySignal(f, metadata) {
 		case SignalActionableFail:
 			ss.ActionableFail++
 		case SignalAdvisoryFail:

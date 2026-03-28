@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/verabase/code-verification-engine/internal/analyzers"
+	"github.com/verabase/code-verification-engine/internal/claims"
+	"github.com/verabase/code-verification-engine/internal/claimsources"
 	"github.com/verabase/code-verification-engine/internal/facts"
 	"github.com/verabase/code-verification-engine/internal/rules"
 	"github.com/verabase/code-verification-engine/internal/typegraph"
@@ -232,6 +234,39 @@ func TestCancelledContextExitCodeDistinct(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected error containing 'context canceled', got %v", result.Errors)
+	}
+}
+
+func TestAdaptClaimSourceEvidenceSetsOriginsBySourceType(t *testing.T) {
+	in := []claimsources.SourceEvidenceRecord{
+		{EvidenceID: "ev-readme", SourceType: claimsources.SourceTypeReadme, Producer: "p", Path: "README.md", Kind: "readme_section"},
+		{EvidenceID: "ev-doc", SourceType: claimsources.SourceTypeDoc, Producer: "p", Path: "docs/arch.md", Kind: "doc_section"},
+		{EvidenceID: "ev-code", SourceType: claimsources.SourceTypeCode, Producer: "p", Path: "internal/app/service.go", Kind: "code_module"},
+		{EvidenceID: "ev-test", SourceType: claimsources.SourceTypeTest, Producer: "p", Path: "internal/app/service_test.go", Kind: "test_file"},
+		{EvidenceID: "ev-eval", SourceType: claimsources.SourceTypeEval, Producer: "p", Path: "evals/adversarial.json", Kind: "eval_asset"},
+	}
+
+	out := adaptClaimSourceEvidence(in)
+	if len(out) != len(in) {
+		t.Fatalf("expected %d adapted records, got %d", len(in), len(out))
+	}
+
+	got := map[string]string{}
+	for _, record := range out {
+		got[record.EvidenceID] = record.Origin
+	}
+
+	want := map[string]string{
+		"ev-readme": string(claims.ClaimOriginReadmeExtracted),
+		"ev-doc":    string(claims.ClaimOriginDocExtracted),
+		"ev-code":   string(claims.ClaimOriginCodeInferred),
+		"ev-test":   string(claims.ClaimOriginTestInferred),
+		"ev-eval":   string(claims.ClaimOriginEvalInferred),
+	}
+	for evidenceID, expected := range want {
+		if got[evidenceID] != expected {
+			t.Fatalf("origin for %s = %q, want %q", evidenceID, got[evidenceID], expected)
+		}
 	}
 }
 
