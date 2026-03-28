@@ -226,3 +226,34 @@ func TestRunVerifyInterpretOllamaProviderWithoutAPIKey(t *testing.T) {
 		t.Errorf("verify with ollama provider should not exit with invalid input, got %d", code)
 	}
 }
+
+func TestRunVerifyInterpretUnsupportedProvider(t *testing.T) {
+	for _, provider := range []string{"openai", "anthropic", "custom-llm"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Setenv("CVE_LLM_PROVIDER", provider)
+			t.Setenv("CVE_LLM_API_KEY", "test-key")
+			code := Run([]string{"verify", "--repo", "/tmp", "--output", "/tmp/cve-test-out", "--interpret"})
+			if code == ExitInvalidInput {
+				t.Errorf("verify with unsupported provider %q should not exit with invalid input, got %d", provider, code)
+			}
+		})
+	}
+}
+
+func TestRunReleaseGateInvalidFlag(t *testing.T) {
+	code := Run([]string{"release-gate", "--nonexistent-flag"})
+	if code != ExitInvalidInput {
+		t.Errorf("release-gate with invalid flag should exit %d, got %d", ExitInvalidInput, code)
+	}
+}
+
+func TestRunReleaseGateExecution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping release gate execution in short mode")
+	}
+	code := Run([]string{"release-gate"})
+	// May pass or fail depending on test state; just verify it runs the execution path
+	if code != ExitSuccess && code != ExitAnalysisFailure {
+		t.Errorf("release-gate should exit with %d or %d, got %d", ExitSuccess, ExitAnalysisFailure, code)
+	}
+}

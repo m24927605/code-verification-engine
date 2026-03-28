@@ -474,6 +474,239 @@ func TestBridgeVerifiableBundle(t *testing.T) {
 	}
 }
 
+// --- nil guard tests ---
+
+func TestBridgeClaimReport_Nil(t *testing.T) {
+	out := bridgeClaimReport(nil)
+	if out != nil {
+		t.Fatal("bridgeClaimReport(nil) should return nil")
+	}
+}
+
+func TestBridgeVerifiableBundle_Nil(t *testing.T) {
+	out := bridgeVerifiableBundle(nil)
+	if out != nil {
+		t.Fatal("bridgeVerifiableBundle(nil) should return nil")
+	}
+}
+
+func TestBridgeClaimsProjection_Nil(t *testing.T) {
+	out := bridgeClaimsProjection(nil)
+	if out != nil {
+		t.Fatal("bridgeClaimsProjection(nil) should return nil")
+	}
+}
+
+// --- bridgeSkillsV2 with FormulaInputs ---
+
+func TestBridgeSkillsV2_WithFormulaInputs(t *testing.T) {
+	a := artifactsv2.SkillsArtifact{
+		SchemaVersion: "2.0.0",
+		EngineVersion: "verabase@dev",
+		Repo:          "github.com/acme/repo",
+		Commit:        "abc123",
+		Timestamp:     "2026-03-27T12:00:00Z",
+		Skills: []artifactsv2.SkillScore{
+			{
+				SkillID:                 "backend",
+				Score:                   0.85,
+				Confidence:              0.9,
+				ContributingIssueIDs:    []string{"iss-1", "iss-2"},
+				ContributingEvidenceIDs: []string{"ev-1"},
+				FormulaInputs: &artifactsv2.SkillFormulaInputs{
+					Positive: []artifactsv2.WeightedContribution{
+						{IssueID: "iss-1", Weight: 0.7, Value: 1.0},
+						{IssueID: "iss-2", Weight: 0.3, Value: 0.5},
+					},
+					Negative: []artifactsv2.WeightedContribution{
+						{IssueID: "iss-3", Weight: 0.2, Value: -0.5},
+					},
+				},
+			},
+			{
+				SkillID:    "frontend",
+				Score:      0.5,
+				Confidence: 0.6,
+			},
+		},
+	}
+
+	out := bridgeSkillsV2(a)
+	if out.SchemaVersion != "2.0.0" {
+		t.Fatalf("unexpected schema version %q", out.SchemaVersion)
+	}
+	if len(out.Skills) != 2 {
+		t.Fatalf("expected 2 skills, got %d", len(out.Skills))
+	}
+
+	// Skill with formula inputs
+	s0 := out.Skills[0]
+	if s0.SkillID != "backend" || s0.Score != 0.85 || s0.Confidence != 0.9 {
+		t.Fatalf("unexpected skill 0: %#v", s0)
+	}
+	if s0.FormulaInputs == nil {
+		t.Fatal("expected formula inputs for skill 0")
+	}
+	if len(s0.FormulaInputs.Positive) != 2 {
+		t.Fatalf("expected 2 positive contributions, got %d", len(s0.FormulaInputs.Positive))
+	}
+	if s0.FormulaInputs.Positive[0].IssueID != "iss-1" || s0.FormulaInputs.Positive[0].Weight != 0.7 {
+		t.Fatalf("unexpected positive[0]: %#v", s0.FormulaInputs.Positive[0])
+	}
+	if s0.FormulaInputs.Positive[1].IssueID != "iss-2" || s0.FormulaInputs.Positive[1].Value != 0.5 {
+		t.Fatalf("unexpected positive[1]: %#v", s0.FormulaInputs.Positive[1])
+	}
+	if len(s0.FormulaInputs.Negative) != 1 || s0.FormulaInputs.Negative[0].IssueID != "iss-3" {
+		t.Fatalf("unexpected negative contributions: %#v", s0.FormulaInputs.Negative)
+	}
+	if len(s0.ContributingIssueIDs) != 2 || len(s0.ContributingEvidenceIDs) != 1 {
+		t.Fatalf("unexpected contributing IDs: issues=%v evidence=%v", s0.ContributingIssueIDs, s0.ContributingEvidenceIDs)
+	}
+
+	// Skill without formula inputs
+	s1 := out.Skills[1]
+	if s1.SkillID != "frontend" || s1.FormulaInputs != nil {
+		t.Fatalf("unexpected skill 1: %#v", s1)
+	}
+}
+
+// --- bridgeResumeInputArtifact with StronglySupportedClaims ---
+
+func TestBridgeResumeInputArtifact_WithStronglySupportedClaims(t *testing.T) {
+	in := artifactsv2.ResumeInputArtifact{
+		SchemaVersion: "1.0.0",
+		Profile: artifactsv2.ProfileArtifact{
+			SchemaVersion: "1.0.0",
+			Repository:    artifactsv2.ClaimRepositoryRef{Path: "/repo", Commit: "abc123"},
+		},
+		VerifiedClaims: []artifactsv2.ResumeClaimStub{
+			{ClaimID: "c-1", Title: "Verified claim", SupportLevel: "verified", Confidence: 0.95},
+		},
+		StronglySupportedClaims: []artifactsv2.ResumeClaimStub{
+			{ClaimID: "c-2", Title: "Strong claim", SupportLevel: "strongly_supported", Confidence: 0.80, SupportingEvidenceIDs: []string{"ev-1"}},
+			{ClaimID: "c-3", Title: "Another strong", SupportLevel: "strongly_supported", Confidence: 0.75},
+		},
+		TechnologySummary: []string{"go"},
+		EvidenceReferences: []artifactsv2.EvidenceReference{
+			{EvidenceID: "ev-1", ClaimIDs: []string{"c-2"}, ContradictoryClaimIDs: []string{"c-bad"}},
+		},
+		SynthesisConstraints: artifactsv2.SynthesisConstraints{
+			AllowUnsupportedClaims: true,
+		},
+	}
+
+	out := bridgeResumeInputArtifact(in)
+	if out.SchemaVersion != "1.0.0" {
+		t.Fatalf("unexpected schema version %q", out.SchemaVersion)
+	}
+	if len(out.VerifiedClaims) != 1 || out.VerifiedClaims[0].ClaimID != "c-1" {
+		t.Fatalf("unexpected verified claims: %#v", out.VerifiedClaims)
+	}
+	if len(out.StronglySupportedClaims) != 2 {
+		t.Fatalf("expected 2 strongly supported claims, got %d", len(out.StronglySupportedClaims))
+	}
+	if out.StronglySupportedClaims[0].ClaimID != "c-2" || out.StronglySupportedClaims[0].Confidence != 0.80 {
+		t.Fatalf("unexpected strongly supported[0]: %#v", out.StronglySupportedClaims[0])
+	}
+	if len(out.StronglySupportedClaims[0].SupportingEvidenceIDs) != 1 {
+		t.Fatalf("expected supporting evidence IDs for strongly supported[0]")
+	}
+	if out.StronglySupportedClaims[1].ClaimID != "c-3" {
+		t.Fatalf("unexpected strongly supported[1]: %#v", out.StronglySupportedClaims[1])
+	}
+	if len(out.EvidenceReferences) != 1 || len(out.EvidenceReferences[0].ContradictoryClaimIDs) != 1 {
+		t.Fatalf("unexpected evidence references: %#v", out.EvidenceReferences)
+	}
+	if !out.SynthesisConstraints.AllowUnsupportedClaims {
+		t.Fatal("expected AllowUnsupportedClaims to be true")
+	}
+}
+
+// --- bridgeVerifiableBundle with ConfidenceBreakdown ---
+
+func TestBridgeVerifiableBundle_WithConfidenceBreakdown(t *testing.T) {
+	b := &artifactsv2.Bundle{
+		Report: artifactsv2.ReportArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+			TraceID:       "trace-1",
+			Summary:       artifactsv2.ReportSummary{OverallScore: 0.5, RiskLevel: "low"},
+			Issues: []artifactsv2.Issue{{
+				ID:       "iss-1",
+				Category: "quality",
+				Title:    "Test issue",
+				Severity: "medium",
+				ConfidenceBreakdown: &artifactsv2.ConfidenceBreakdown{
+					RuleReliability:      0.95,
+					EvidenceQuality:      0.80,
+					BoundaryCompleteness: 0.70,
+					ContextCompleteness:  0.60,
+					SourceAgreement:      0.90,
+					ContradictionPenalty: 0.05,
+					LLMPenalty:           0.10,
+					Final:                0.75,
+				},
+				SourceSummary: artifactsv2.IssueSourceSummary{RuleCount: 1, TotalSources: 1},
+			}},
+		},
+		Evidence: artifactsv2.EvidenceArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+		},
+		Skills: artifactsv2.SkillsArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+		},
+		Trace: artifactsv2.TraceArtifact{
+			SchemaVersion: "2.0.0",
+			EngineVersion: "verabase@dev",
+			TraceID:       "trace-1",
+			Repo:          "github.com/acme/repo",
+			Commit:        "abc123",
+			Timestamp:     "2026-03-27T12:00:00Z",
+			ScanBoundary:  artifactsv2.TraceScanBoundary{Mode: "repo", IncludedFiles: 5},
+		},
+		SummaryMD: "# Summary",
+		Signature: artifactsv2.SignatureArtifact{
+			Version:        "1.0.0",
+			SignedBy:       "verabase",
+			Timestamp:      "2026-03-27T12:00:00Z",
+			ArtifactHashes: map[string]string{"report.json": "sha256:x"},
+			BundleHash:     "sha256:y",
+		},
+	}
+
+	out := bridgeVerifiableBundle(b)
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+	if len(out.Report.Issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(out.Report.Issues))
+	}
+	issue := out.Report.Issues[0]
+	if issue.ConfidenceBreakdown == nil {
+		t.Fatal("expected confidence breakdown")
+	}
+	if issue.ConfidenceBreakdown.RuleReliability != 0.95 {
+		t.Fatalf("unexpected rule reliability %f", issue.ConfidenceBreakdown.RuleReliability)
+	}
+	if issue.ConfidenceBreakdown.Final != 0.75 {
+		t.Fatalf("unexpected final confidence %f", issue.ConfidenceBreakdown.Final)
+	}
+	if issue.ConfidenceBreakdown.LLMPenalty != 0.10 {
+		t.Fatalf("unexpected LLM penalty %f", issue.ConfidenceBreakdown.LLMPenalty)
+	}
+}
+
 func TestBridgeClaimsProjection(t *testing.T) {
 	in := &artifactsv2.ClaimsProjectionArtifacts{
 		Claims: artifactsv2.ClaimsArtifact{

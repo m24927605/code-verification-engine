@@ -178,3 +178,47 @@ func TestReleaseGateEnvPreservesExplicitGoCache(t *testing.T) {
 		t.Fatal("expected process GOCACHE env to remain unchanged")
 	}
 }
+
+func TestDefaultExecutor_EmptyCommand(t *testing.T) {
+	t.Parallel()
+	_, err := DefaultExecutor(context.Background(), []string{})
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("expected empty command error, got %v", err)
+	}
+}
+
+func TestDefaultExecutor_SuccessfulCommand(t *testing.T) {
+	t.Parallel()
+	out, err := DefaultExecutor(context.Background(), []string{"echo", "hello gate"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "hello gate") {
+		t.Fatalf("expected output to contain 'hello gate', got %q", out)
+	}
+}
+
+func TestDefaultExecutor_FailedCommand(t *testing.T) {
+	t.Parallel()
+	_, err := DefaultExecutor(context.Background(), []string{"false"})
+	if err == nil {
+		t.Fatal("expected error from failed command")
+	}
+	if !strings.Contains(err.Error(), "false") {
+		t.Fatalf("expected error to wrap command name, got %v", err)
+	}
+}
+
+func TestRunWithNilExecutorUsesDefault(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so DefaultExecutor fails immediately
+	result := Run(ctx, nil)
+	// Should use DefaultExecutor and fail due to cancelled context
+	if result.Passed {
+		t.Fatal("expected failure with cancelled context")
+	}
+	if len(result.Steps) == 0 {
+		t.Fatal("expected at least one step attempted")
+	}
+}

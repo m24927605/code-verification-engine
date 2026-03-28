@@ -183,15 +183,50 @@ Current `technologies[].kind` values include:
 
 ## Output Files
 
-| File                | Mode           | Description                                    |
-|---------------------|----------------|------------------------------------------------|
-| `scan.json`         | verification   | Repository metadata, analyzers, languages       |
-| `report.json`       | verification   | Findings, trust summary, capability summary     |
-| `report.md`         | verification   | Human-readable report                          |
-| `accounting.json`   | verification   | Per-file analysis accounting                    |
-| `evidence-graph.json`| verification  | Evidence relationship graph                     |
-| `claims.json`       | verification   | Claim verdicts (when `--claims` specified)      |
-| `skills.json`       | skill_inference| Skill signals plus simplified stack summaries   |
+`--output` writes the current public artifacts at the root of the output directory and also writes an evidence-first compatibility bundle under `verifiable/`.
+
+### Root Output Directory
+
+Always written:
+
+| File                  | Description                                 |
+|-----------------------|---------------------------------------------|
+| `scan.json`           | Repository metadata, analyzers, languages    |
+| `accounting.json`     | Per-file analysis accounting                 |
+| `evidence-graph.json` | Evidence relationship graph                  |
+| `verifiable/`         | Evidence-first compatibility artifact bundle |
+
+Conditionally written:
+
+| File               | Condition                                | Description                                  |
+|--------------------|------------------------------------------|----------------------------------------------|
+| `report.json`      | `--format=json` or `--format=both`       | Findings, trust summary, capability summary  |
+| `report.md`        | `--format=md` or `--format=both`         | Human-readable report                        |
+| `claims.json`      | `--claims` specified                     | Claim verdicts                               |
+| `skills.json`      | `--mode=skill_inference` or `--mode=both`| Skill signals plus stack summaries           |
+| `review.json`      | `--interpret` enabled                    | Constrained LLM review output                |
+| `interpreted.json` | `--interpret` enabled                    | Full LLM interpretation output               |
+
+### `verifiable/` Bundle
+
+Always written:
+
+| File             | Description                                      |
+|------------------|--------------------------------------------------|
+| `report.json`    | Evidence-backed issue-centric verification report |
+| `evidence.json`  | Canonical evidence store                         |
+| `skills.json`    | Evidence-derived skill and technology outputs    |
+| `trace.json`     | Deterministic derivation and execution trace     |
+| `summary.md`     | Human-readable bundle summary                    |
+| `signature.json` | Artifact hashes and bundle signature envelope    |
+
+Conditionally written:
+
+| File                | Condition                   | Description                         |
+|---------------------|-----------------------------|-------------------------------------|
+| `claims.json`       | Claim projection available  | Multi-source claim projection       |
+| `profile.json`      | Claim projection available  | Capability profile projection       |
+| `resume_input.json` | Claim projection available  | Resume-oriented projection artifact |
 
 ## Trust Model
 

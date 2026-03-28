@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/verabase/code-verification-engine/internal/claims"
+	"github.com/verabase/code-verification-engine/internal/claimsources"
 	"github.com/verabase/code-verification-engine/internal/facts"
 	"github.com/verabase/code-verification-engine/internal/rules" //nolint:staticcheck
 )
@@ -747,5 +749,135 @@ func TestRunSkillInferenceWriteFailure(t *testing.T) {
 	})
 	// Accept exit 5 (write failure) or success if OS ignores permission
 	_ = result
+}
+
+// --- claimOriginForSourceType: default (unknown source type) ---
+
+func TestClaimOriginForSourceType_DefaultBranch(t *testing.T) {
+	// Unknown SourceType should fall through to ClaimOriginRuleInferred
+	got := claimOriginForSourceType("unknown_type")
+	want := string(claims.ClaimOriginRuleInferred)
+	if got != want {
+		t.Errorf("claimOriginForSourceType(unknown) = %q, want %q", got, want)
+	}
+}
+
+func TestClaimOriginForSourceType_AllBranches(t *testing.T) {
+	tests := []struct {
+		sourceType claimsources.SourceType
+		want       string
+	}{
+		{claimsources.SourceTypeReadme, string(claims.ClaimOriginReadmeExtracted)},
+		{claimsources.SourceTypeDoc, string(claims.ClaimOriginDocExtracted)},
+		{claimsources.SourceTypeCode, string(claims.ClaimOriginCodeInferred)},
+		{claimsources.SourceTypeTest, string(claims.ClaimOriginTestInferred)},
+		{claimsources.SourceTypeEval, string(claims.ClaimOriginEvalInferred)},
+		{"some_other_type", string(claims.ClaimOriginRuleInferred)},
+	}
+	for _, tc := range tests {
+		got := claimOriginForSourceType(tc.sourceType)
+		if got != tc.want {
+			t.Errorf("claimOriginForSourceType(%q) = %q, want %q", tc.sourceType, got, tc.want)
+		}
+	}
+}
+
+// --- buildClaimsProfileResumeArtifacts: nil meta ---
+
+func TestBuildClaimsProfileResumeArtifacts_NilMeta(t *testing.T) {
+	result, err := buildClaimsProfileResumeArtifacts(nil, nil, rules.ExecutionResult{}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result for nil meta, got %v", result)
+	}
+}
+
+// --- copyStringMap: non-nil and nil ---
+
+func TestCopyStringMap(t *testing.T) {
+	tests := []struct {
+		name  string
+		input map[string]string
+		want  map[string]string
+	}{
+		{"nil", nil, nil},
+		{"empty", map[string]string{}, map[string]string{}},
+		{"single", map[string]string{"a": "b"}, map[string]string{"a": "b"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := copyStringMap(tc.input)
+			if tc.input == nil {
+				if got != nil {
+					t.Errorf("expected nil, got %v", got)
+				}
+				return
+			}
+			if len(got) != len(tc.want) {
+				t.Errorf("len = %d, want %d", len(got), len(tc.want))
+			}
+			for k, v := range tc.want {
+				if got[k] != v {
+					t.Errorf("got[%q] = %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+// --- Run: with valid claim set ---
+
+func TestRunWithValidClaimSet(t *testing.T) {
+	repoPath := createTestRepo(t, goRouterFiles())
+	result := Run(Config{
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		ClaimSet:  "backend-api-claims",
+		OutputDir: t.TempDir(),
+		Format:    "json",
+	})
+	// The claim set may or may not exist; we're testing the flow
+	if result.ExitCode == 3 {
+		// Unknown claim set is acceptable — we just want to exercise the path
+		return
+	}
+	if result.ExitCode != 0 && result.ExitCode != 5 && result.ExitCode != 6 {
+		t.Errorf("unexpected exit code %d; errors: %v", result.ExitCode, result.Errors)
+	}
+}
+
+// --- Run: format "text" output ---
+
+func TestRunFormatText(t *testing.T) {
+	repoPath := createTestRepo(t, goRouterFiles())
+	result := Run(Config{
+		RepoPath:  repoPath,
+		Profile:   "backend-api",
+		OutputDir: t.TempDir(),
+		Format:    "text",
+	})
+	if result.ExitCode != 0 && result.ExitCode != 5 && result.ExitCode != 6 {
+		t.Errorf("unexpected exit code %d; errors: %v", result.ExitCode, result.Errors)
+	}
+}
+
+// --- Run: with agent runtime enabled but failing provider ---
+
+func TestRunWithAgentRuntimeFailingProvider(t *testing.T) {
+	repoPath := createTestRepo(t, goRouterFiles())
+	result := Run(Config{
+		RepoPath:      repoPath,
+		Profile:       "backend-api",
+		OutputDir:     t.TempDir(),
+		Format:        "json",
+		AgentRuntime:  true,
+		AgentProvider: &failingProvider{},
+	})
+	// Agent failures should not crash the pipeline
+	if result.ExitCode != 0 && result.ExitCode != 5 && result.ExitCode != 6 {
+		t.Errorf("unexpected exit code %d; errors: %v", result.ExitCode, result.Errors)
+	}
 }
 
