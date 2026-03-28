@@ -1,6 +1,8 @@
 package artifactsv2
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/verabase/code-verification-engine/internal/report"
@@ -479,6 +481,13 @@ func TestBuildBundleSkipsNonTraceableSkillSignalsInSkillsArtifact(t *testing.T) 
 	}
 	if len(bundle.Skills.Skills) != 0 {
 		t.Fatalf("expected non-traceable legacy skill signal to be skipped from skills artifact, got %#v", bundle.Skills.Skills)
+	}
+	data, err := json.Marshal(bundle.Skills)
+	if err != nil {
+		t.Fatalf("Marshal(skills): %v", err)
+	}
+	if !strings.Contains(string(data), `"skills":[]`) {
+		t.Fatalf("expected marshaled skills artifact to contain an empty array, got %s", string(data))
 	}
 }
 

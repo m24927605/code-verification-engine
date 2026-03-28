@@ -152,6 +152,7 @@ func buildSkillsArtifact(scan report.ScanReport, skillReport *skills.Report, eng
 		Repo:          scan.RepoName,
 		Commit:        scan.CommitSHA,
 		Timestamp:     scan.ScannedAt,
+		Skills:        []SkillScore{},
 	}
 	if skillReport == nil {
 		return artifact
