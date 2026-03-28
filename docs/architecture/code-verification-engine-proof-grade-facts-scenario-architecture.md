@@ -17,7 +17,7 @@ The target is to:
 - prevent heuristic-only signals from being presented as proof
 - preserve conservative `unknown` and `human_or_runtime_required` outcomes where proof is not possible
 
-This architecture must remain consistent with the existing v2 principles already established in the repository:
+This architecture must remain consistent with the existing architecture principles already established in the repository:
 
 - evidence-first
 - deterministic-first
@@ -513,4 +513,4 @@ This architecture is successful only if:
 2. outsource and PM acceptance can be driven by proof-grade checks with explicit unknown handling
 3. hiring outputs remain resume-safe and contradiction-aware
 4. negative proof claims are emitted only when completeness requirements are met
-5. the implementation extends the current evidence-first v2 system rather than creating a parallel unverifiable path
+5. the implementation extends the current evidence-first system rather than creating a parallel unverifiable path

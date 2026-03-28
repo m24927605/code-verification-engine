@@ -239,13 +239,13 @@ func TestCanonicalJSONHandlesStruct(t *testing.T) {
 	}
 }
 
-// ---------- builder.go: BuildCompatArtifacts with AgentExecutor that returns no tasks ----------
+// ---------- builder.go: BuildArtifacts with AgentExecutor that returns no tasks ----------
 
-func TestBuildCompatArtifactsNoAgentTasksNeeded(t *testing.T) {
+func TestBuildArtifactsNoAgentTasksNeeded(t *testing.T) {
 	t.Parallel()
 
 	// Issue is resolved, so no agent tasks should be generated
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			RepoName:     "github.com/acme/repo",
 			CommitSHA:    "abc123def456",
@@ -277,27 +277,27 @@ func TestBuildCompatArtifactsNoAgentTasksNeeded(t *testing.T) {
 		EngineVersion: "dev",
 	}
 
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
 }
 
-// ---------- builder.go: BuildCompatBundle error fallback path ----------
+// ---------- builder.go: BuildBundle error fallback path ----------
 
-func TestBuildCompatBundleReturnsMinimalBundleOnError(t *testing.T) {
+func TestBuildBundleReturnsMinimalBundleOnError(t *testing.T) {
 	t.Parallel()
 
 	// Force the error path by providing a scan with missing required fields
 	// that won't pass validation in the compat pipeline.
-	// Actually, BuildCompatBundle catches internal errors and returns a fallback.
+	// Actually, BuildBundle catches internal errors and returns a fallback.
 	// We can trigger it with completely empty scan + verification.
 	scan := report.ScanReport{}
 	vr := report.VerificationReport{}
-	bundle := BuildCompatBundle(scan, vr, nil, "dev")
+	bundle := BuildBundle(scan, vr, nil, "dev")
 
 	// Should return a fallback bundle with valid structure
 	if bundle.Report.SchemaVersion != ReportSchemaVersion {
@@ -380,7 +380,7 @@ func TestFinalizeSignatureInvalidBundle(t *testing.T) {
 func TestBuildBundleFromIssueCandidateSetValidInput(t *testing.T) {
 	t.Parallel()
 
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			RepoName:     "github.com/acme/repo",
 			CommitSHA:    "abc123def456",

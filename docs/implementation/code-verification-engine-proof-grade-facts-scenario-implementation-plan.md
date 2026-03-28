@@ -8,7 +8,7 @@ This document defines the implementation plan for productizing proof-grade facts
 2. outsourced delivery acceptance assistance
 3. software engineering PM acceptance
 
-The implementation must produce a system that Claude Code can deliver incrementally without weakening current v2 guarantees.
+The implementation must produce a system that Claude Code can deliver incrementally without weakening current guarantees.
 
 ## 2. Implementation Objectives
 
@@ -26,7 +26,7 @@ The implementation must:
 The repository already contains:
 
 - deterministic rule execution
-- evidence-backed v2 artifacts
+- evidence-backed canonical artifacts
 - fact quality classes: `proof`, `structural`, `heuristic`
 - claim/profile/resume projection contracts
 - trust class semantics
@@ -50,7 +50,7 @@ Rules:
 - contracts before broad implementation
 - rule migration before mass scenario projection
 - acceptance fixtures introduced alongside capability, not after
-- each phase must preserve current output compatibility unless the contract explicitly changes
+- each phase must preserve current output continuity unless the contract explicitly changes
 
 ## 5. Phase 1: Contract and Metadata Expansion
 
@@ -154,7 +154,7 @@ Replace broad heuristic rules with narrower proof-capable claim slices.
   - structural-only
   - runtime-or-human-only
 - split broad rules into smaller rule families
-- preserve compatibility mapping from legacy rule IDs to new claim families where necessary
+- preserve audit mapping from historical rule IDs to new claim families where necessary
 - update matcher logic to use fact quality, completeness, and binding facts rather than names or file paths where possible
 
 ### Mandatory First-Wave Rule Families
@@ -175,7 +175,7 @@ Replace broad heuristic rules with narrower proof-capable claim slices.
 ### Exit Criteria
 
 - first-wave rule families can emit proof-grade, structural, or unknown outcomes deterministically
-- heuristic-only legacy semantics are no longer presented as equivalent to proof
+- heuristic-only historical finding semantics are no longer presented as equivalent to proof
 
 ## 9. Phase 5: Claim Verification Class Integration
 
@@ -311,12 +311,12 @@ Make the new proof-grade scenario path release-blocking where appropriate.
   - negative-proof completeness checks
   - hiring resume-safety checks
 - add migration summary to trace output
-- document legacy rule-to-new-claim mappings
+- document historical rule-to-new-claim mappings
 
 ### Exit Criteria
 
 - the local release gate fails if scenario projections violate trust boundaries
-- migrated rule families are observable through trace and compatibility outputs
+- migrated rule families are observable through trace and trace outputs
 
 ## 13. Recommended File-Level Work Breakdown
 
@@ -419,7 +419,7 @@ Required:
 
 Required:
 
-- existing v2 outputs remain coherent
+- existing canonical outputs remain coherent
 - heuristic-only findings do not regress into stronger classes accidentally
 
 ## 16. Migration Rules for Claude Code
@@ -429,7 +429,7 @@ Claude Code should follow these sequencing constraints:
 1. implement contracts first
 2. add failing tests before broad matcher changes
 3. migrate first-wave rule families one family at a time
-4. keep old compatibility outputs until new artifacts are stable
+4. keep old trace outputs until new artifacts are stable
 5. do not mark proof-grade on any rule family until benchmark fixtures are green
 6. prefer explicit downgrade to `unknown` over fallback heuristics
 
@@ -442,4 +442,4 @@ This work is complete only when:
 3. hiring outputs are resume-safe by contract
 4. outsource and PM acceptance artifacts exist and are machine-readable
 5. release gate checks enforce the new trust boundaries
-6. existing v2 evidence-first guarantees remain intact
+6. existing evidence-first guarantees remain intact

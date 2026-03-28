@@ -91,7 +91,7 @@ func runScenarioFixture(ctx context.Context, fixtureDir string, golden ScenarioF
 		return nil, fmt.Errorf("engine exit code %d: %v", result.ExitCode, result.Errors)
 	}
 	if result.VerifiableBundle == nil {
-		return nil, fmt.Errorf("missing verifiable bundle")
+		return nil, fmt.Errorf("missing verifiable bundle: exit=%d errors=%v", result.ExitCode, result.Errors)
 	}
 	return &scenarioFixtureRunResult{Bundle: *result.VerifiableBundle}, nil
 }

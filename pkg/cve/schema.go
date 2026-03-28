@@ -91,30 +91,84 @@ type ScanOutput struct {
 	Profile           string            `json:"profile"`
 }
 
-// ReportSummaryOutput is the typed public representation of the report summary.
+// ReportOutput is the typed public representation of the canonical issue-centric report.
+type ReportOutput struct {
+	SchemaVersion string              `json:"schema_version"`
+	EngineVersion string              `json:"engine_version"`
+	Repo          string              `json:"repo"`
+	Commit        string              `json:"commit"`
+	Timestamp     string              `json:"timestamp"`
+	TraceID       string              `json:"trace_id"`
+	Summary       ReportSummaryOutput `json:"summary"`
+	Skills        []ReportSkillOutput `json:"skills"`
+	Issues        []IssueOutput       `json:"issues"`
+}
+
 type ReportSummaryOutput struct {
-	Pass    int `json:"pass"`
-	Fail    int `json:"fail"`
-	Unknown int `json:"unknown"`
+	OverallScore float64          `json:"overall_score"`
+	RiskLevel    string           `json:"risk_level"`
+	IssueCounts  IssueCountOutput `json:"issue_counts"`
 }
 
-// SkippedRuleOutput is the typed public representation of a skipped rule.
-type SkippedRuleOutput struct {
-	RuleID string `json:"rule_id"`
-	Reason string `json:"reason"`
+type IssueCountOutput struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
 }
 
-// TrustGuidance provides consumer-facing guidance on how to treat the
-// verification results. This prevents downstream misuse by making
-// trust boundaries explicit in the API output.
+type ReportSkillOutput struct {
+	SkillID string  `json:"skill_id"`
+	Score   float64 `json:"score"`
+}
+
+type ConfidenceBreakdownOutput struct {
+	RuleReliability      float64 `json:"rule_reliability"`
+	EvidenceQuality      float64 `json:"evidence_quality"`
+	BoundaryCompleteness float64 `json:"boundary_completeness"`
+	ContextCompleteness  float64 `json:"context_completeness"`
+	SourceAgreement      float64 `json:"source_agreement"`
+	ContradictionPenalty float64 `json:"contradiction_penalty"`
+	LLMPenalty           float64 `json:"llm_penalty"`
+	Final                float64 `json:"final"`
+}
+
+type IssueSourceSummaryOutput struct {
+	RuleCount            int  `json:"rule_count"`
+	DeterministicSources int  `json:"deterministic_sources"`
+	AgentSources         int  `json:"agent_sources"`
+	TotalSources         int  `json:"total_sources"`
+	MultiSource          bool `json:"multi_source"`
+}
+
+type IssueOutput struct {
+	ID                  string                     `json:"id"`
+	Fingerprint         string                     `json:"fingerprint"`
+	RuleFamily          string                     `json:"rule_family"`
+	MergeBasis          string                     `json:"merge_basis"`
+	Category            string                     `json:"category"`
+	Title               string                     `json:"title"`
+	Severity            string                     `json:"severity"`
+	Confidence          float64                    `json:"confidence"`
+	ConfidenceClass     string                     `json:"confidence_class"`
+	PolicyClass         string                     `json:"policy_class"`
+	Status              string                     `json:"status"`
+	EvidenceIDs         []string                   `json:"evidence_ids"`
+	CounterEvidenceIDs  []string                   `json:"counter_evidence_ids,omitempty"`
+	SkillImpacts        []string                   `json:"skill_impacts,omitempty"`
+	Sources             []string                   `json:"sources,omitempty"`
+	SourceSummary       IssueSourceSummaryOutput   `json:"source_summary"`
+	ConfidenceBreakdown *ConfidenceBreakdownOutput `json:"confidence_breakdown,omitempty"`
+}
+
+// TrustGuidance is retained for callers that still consume finding-oriented guidance.
 type TrustGuidance struct {
-	CanAutomate      bool   `json:"can_automate"`      // true only if ALL findings are machine_trusted+verified
-	RequiresReview   bool   `json:"requires_review"`   // true if any advisory or human_required findings
-	DegradedAnalysis bool   `json:"degraded_analysis"` // true if capability was degraded at runtime
-	Summary          string `json:"summary"`           // human-readable one-liner
+	CanAutomate      bool   `json:"can_automate"`
+	RequiresReview   bool   `json:"requires_review"`
+	DegradedAnalysis bool   `json:"degraded_analysis"`
+	Summary          string `json:"summary"`
 }
 
-// CapabilitySummaryOutput is the typed public representation of the capability summary.
 type CapabilitySummaryOutput struct {
 	FullySupported int  `json:"fully_supported"`
 	Partial        int  `json:"partial"`
@@ -122,8 +176,6 @@ type CapabilitySummaryOutput struct {
 	Degraded       bool `json:"degraded"`
 }
 
-// SignalSummaryOutput counts findings by operational significance.
-// This separates actionable issues from informational detections (e.g., GOF patterns).
 type SignalSummaryOutput struct {
 	ActionableFail         int `json:"actionable_fail"`
 	AdvisoryFail           int `json:"advisory_fail"`
@@ -131,18 +183,9 @@ type SignalSummaryOutput struct {
 	Unknown                int `json:"unknown"`
 }
 
-// ReportOutput is the typed public representation of report.json.
-type ReportOutput struct {
-	ReportSchemaVersion string                  `json:"report_schema_version"`
-	Partial             bool                    `json:"partial"`
-	Summary             ReportSummaryOutput     `json:"summary"`
-	TrustSummary        TrustSummary            `json:"trust_summary"`
-	CapabilitySummary   CapabilitySummaryOutput `json:"capability_summary"`
-	SignalSummary       SignalSummaryOutput     `json:"signal_summary"`
-	TrustGuidance       TrustGuidance           `json:"trust_guidance"`
-	Findings            []FindingOutput         `json:"findings"`
-	SkippedRules        []SkippedRuleOutput     `json:"skipped_rules,omitempty"`
-	Errors              []string                `json:"errors,omitempty"`
+type SkippedRuleOutput struct {
+	RuleID string `json:"rule_id"`
+	Reason string `json:"reason"`
 }
 
 // SkillOutput is the typed public representation of skills.json.
@@ -353,7 +396,7 @@ type SynthesisConstraintsOutput struct {
 	AllowContradictionSuppression bool `json:"allow_contradiction_suppression"`
 }
 
-// VerifiableOutput is the typed public representation of the v2 verifiable artifact bundle.
+// VerifiableOutput is the typed public representation of the verifiable artifact bundle.
 type VerifiableOutput struct {
 	Report    ReportV2Output    `json:"report"`
 	Evidence  EvidenceV2Output  `json:"evidence"`

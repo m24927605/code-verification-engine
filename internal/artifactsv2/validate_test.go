@@ -128,7 +128,7 @@ func TestValidateTraceRejectsMissingConfidenceCalibrationDetails(t *testing.T) {
 
 	trace := testBundle().Trace
 	trace.ConfidenceCalibration = &ConfidenceCalibration{
-		Version: "v2-release-blocking-calibration-1",
+		Version: "release-blocking-calibration-1",
 	}
 
 	if err := ValidateTrace(trace); err == nil {

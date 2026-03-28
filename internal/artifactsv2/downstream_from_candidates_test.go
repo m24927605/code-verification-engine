@@ -57,25 +57,20 @@ func TestBuildTraceArtifactUsesCandidateRuleMapping(t *testing.T) {
 		BoundaryMode: "repo",
 		Analyzers:    map[string]string{"typescript": "ok"},
 	}
-	vr := report.VerificationReport{
-		ReportSchemaVersion: "1.0.0",
-		Findings: []rules.Finding{
-			{
-				RuleID:  "SEC-001",
-				Status:  rules.StatusFail,
-				Message: "Missing null check",
-				Evidence: []rules.Evidence{{
-					File:      "service.ts",
-					LineStart: 10,
-					LineEnd:   10,
-					Symbol:    "getUser",
-				}},
-			},
-		},
-	}
+	findings := []rules.Finding{{
+		RuleID:  "SEC-001",
+		Status:  rules.StatusFail,
+		Message: "Missing null check",
+		Evidence: []rules.Evidence{{
+			File:      "service.ts",
+			LineStart: 10,
+			LineEnd:   10,
+			Symbol:    "getUser",
+		}},
+	}}
 	verification := VerificationSource{
-		ReportSchemaVersion: vr.ReportSchemaVersion,
-		Findings:            vr.Findings,
+		ReportSchemaVersion: "1.0.0",
+		Findings:            findings,
 		RuleMetadata: map[string]RuleMetadata{
 			"SEC-001": {RuleID: "SEC-001", MigrationState: string(rules.MigrationIssueNative), MigrationReason: "audited issue-native"},
 		},
@@ -87,7 +82,7 @@ func TestBuildTraceArtifactUsesCandidateRuleMapping(t *testing.T) {
 		Category:    "security",
 		Severity:    "high",
 		PolicyClass: "advisory",
-		EvidenceIDs: []string{compatEvidenceID("SEC-001", vr.Findings[0].Evidence[0])},
+		EvidenceIDs: []string{compatEvidenceID("SEC-001", findings[0].Evidence[0])},
 	}}
 	evidence := EvidenceArtifact{
 		SchemaVersion: EvidenceSchemaVersion,
@@ -96,7 +91,7 @@ func TestBuildTraceArtifactUsesCandidateRuleMapping(t *testing.T) {
 		Commit:        "abc123",
 		Timestamp:     "2026-03-27T12:00:00Z",
 		Evidence: []EvidenceRecord{{
-			ID:              compatEvidenceID("SEC-001", vr.Findings[0].Evidence[0]),
+			ID:              compatEvidenceID("SEC-001", findings[0].Evidence[0]),
 			Kind:            "rule_assertion",
 			Source:          "rule",
 			ProducerID:      "rule:SEC-001",

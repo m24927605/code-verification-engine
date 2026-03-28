@@ -162,7 +162,7 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- existing v2 evidence and report generation must remain coherent
+- existing evidence and report generation must remain coherent
 - current public artifacts must not silently change semantics without contract updates
 
 ## 6. Reproducibility Acceptance

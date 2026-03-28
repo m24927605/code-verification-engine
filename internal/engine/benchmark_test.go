@@ -120,9 +120,9 @@ func TestBenchmarkTrustedCorePipeline(t *testing.T) {
 
 				// Find the finding for our target rule
 				var finding *rules.Finding
-				for i, f := range result.Report.Findings {
+				for i, f := range result.Findings {
 					if f.RuleID == golden.RuleID {
-						finding = &result.Report.Findings[i]
+						finding = &result.Findings[i]
 						break
 					}
 				}
@@ -135,7 +135,7 @@ func TestBenchmarkTrustedCorePipeline(t *testing.T) {
 						}
 					}
 					t.Fatalf("finding for %s not found in report (findings: %d, skipped: %d)",
-						golden.RuleID, len(result.Report.Findings), len(result.Report.SkippedRules))
+						golden.RuleID, len(result.Findings), len(result.Report.SkippedRules))
 				}
 
 				// Validate against golden expectations

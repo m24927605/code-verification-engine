@@ -477,17 +477,16 @@ func TestVerifyOutputTypedJSONSerialization(t *testing.T) {
 			Profile:           "backend-api",
 		},
 		Report: ReportOutput{
-			ReportSchemaVersion: ReportSchemaVersion,
-			Summary:             ReportSummaryOutput{Pass: 2, Fail: 1},
-			TrustSummary: TrustSummary{
-				MachineTrusted:         1,
-				Advisory:               1,
-				HumanOrRuntimeRequired: 1,
+			SchemaVersion: ReportV2SchemaVersion,
+			Summary: ReportSummaryOutput{
+				OverallScore: 0.88,
+				RiskLevel:    "medium",
+				IssueCounts:  IssueCountOutput{High: 1, Medium: 1, Low: 1},
 			},
-			Findings: []FindingOutput{
-				{RuleID: "SEC-SECRET-001", Status: "pass", TrustClass: "machine_trusted"},
-				{RuleID: "SEC-AUTH-001", Status: "pass", TrustClass: "advisory"},
-				{RuleID: "SEC-AUTH-002", Status: "fail", TrustClass: "human_or_runtime_required"},
+			Issues: []IssueOutput{
+				{ID: "iss-1", RuleFamily: "sec_secret", PolicyClass: "machine_trusted", Status: "resolved", Title: "Secrets handled safely", SourceSummary: IssueSourceSummaryOutput{RuleCount: 1, DeterministicSources: 1, TotalSources: 1}},
+				{ID: "iss-2", RuleFamily: "auth_guard", PolicyClass: "advisory", Status: "open", Title: "Auth middleware incomplete", SourceSummary: IssueSourceSummaryOutput{RuleCount: 1, DeterministicSources: 1, TotalSources: 1}},
+				{ID: "iss-3", RuleFamily: "runtime_check", PolicyClass: "human_or_runtime_required", Status: "open", Title: "Runtime verification required", SourceSummary: IssueSourceSummaryOutput{RuleCount: 1, DeterministicSources: 1, TotalSources: 1}},
 			},
 		},
 	}
@@ -498,28 +497,25 @@ func TestVerifyOutputTypedJSONSerialization(t *testing.T) {
 	}
 
 	s := string(data)
-	for _, tc := range []string{"machine_trusted", "advisory", "human_or_runtime_required"} {
-		if !strings.Contains(s, tc) {
-			t.Errorf("serialized output missing trust_class %q", tc)
+	for _, pc := range []string{"machine_trusted", "advisory", "human_or_runtime_required"} {
+		if !strings.Contains(s, pc) {
+			t.Errorf("serialized output missing policy_class %q", pc)
 		}
 	}
-	if !strings.Contains(s, "trust_summary") {
-		t.Error("serialized output missing trust_summary")
+	if !strings.Contains(s, "issue_counts") {
+		t.Error("serialized output missing issue_counts")
 	}
 
 	var roundTrip VerifyOutput
 	if err := json.Unmarshal(data, &roundTrip); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
-	if roundTrip.Report.TrustSummary.MachineTrusted != 1 {
-		t.Errorf("expected machine_trusted=1, got %d", roundTrip.Report.TrustSummary.MachineTrusted)
+	if got := roundTrip.Report.Summary.IssueCounts.High; got != 1 {
+		t.Errorf("expected high issue count=1, got %d", got)
 	}
-	if roundTrip.Report.TrustSummary.Advisory != 1 {
-		t.Errorf("expected advisory=1, got %d", roundTrip.Report.TrustSummary.Advisory)
-	}
-	for _, f := range roundTrip.Report.Findings {
-		if f.TrustClass == "" {
-			t.Errorf("finding %s missing trust_class after round-trip", f.RuleID)
+	for _, issue := range roundTrip.Report.Issues {
+		if issue.PolicyClass == "" {
+			t.Errorf("issue %s missing policy_class after round-trip", issue.ID)
 		}
 	}
 }
@@ -596,7 +592,7 @@ func TestVerifyOutputVerifiableRoundTrip(t *testing.T) {
 				Timestamp:     "2026-03-27T12:00:00Z",
 				ScanBoundary:  TraceScanBoundaryV2Output{Mode: "repo", IncludedFiles: 1},
 				ConfidenceCalibration: &ConfidenceCalibrationV2Output{
-					Version:                 "v2-release-blocking-calibration-1",
+					Version:                 "release-blocking-calibration-1",
 					MachineTrustedThreshold: 0.85,
 					UnknownCap:              0.55,
 					AgentOnlyCap:            0.60,
@@ -809,47 +805,25 @@ func TestFindingOutputRequiresTrustClass(t *testing.T) {
 
 func TestReportOutputJSONCompat(t *testing.T) {
 	r := ReportOutput{
-		ReportSchemaVersion: "1.0.0",
-		Summary:             ReportSummaryOutput{Pass: 1},
-		TrustSummary:        TrustSummary{MachineTrusted: 1},
-		Findings: []FindingOutput{
-			{RuleID: "R-001", Status: "pass", TrustClass: "machine_trusted"},
-		},
+		SchemaVersion: "2.0.0",
+		Summary:       ReportSummaryOutput{OverallScore: 1.0, RiskLevel: "low", IssueCounts: IssueCountOutput{Low: 1}},
+		Issues: []IssueOutput{{
+			ID:            "iss-1",
+			RuleFamily:    "r_001",
+			PolicyClass:   "machine_trusted",
+			Status:        "resolved",
+			Title:         "Resolved issue",
+			SourceSummary: IssueSourceSummaryOutput{RuleCount: 1, DeterministicSources: 1, TotalSources: 1},
+		}},
 	}
 	data, err := json.Marshal(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"report_schema_version", "summary", "trust_summary", "signal_summary", "findings", "trust_class"} {
+	for _, field := range []string{"schema_version", "summary", "issue_counts", "issues", "policy_class"} {
 		if !strings.Contains(string(data), field) {
 			t.Errorf("ReportOutput JSON missing field %q", field)
 		}
-	}
-}
-
-func TestSignalSummaryOutput_JSONSerialization(t *testing.T) {
-	out := &VerifyOutput{
-		Report: ReportOutput{
-			SignalSummary: SignalSummaryOutput{
-				ActionableFail:         7,
-				AdvisoryFail:           6,
-				InformationalDetection: 19,
-				Unknown:                0,
-			},
-		},
-	}
-	data, err := json.Marshal(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(data)
-	for _, field := range []string{"actionable_fail", "advisory_fail", "informational_detection"} {
-		if !strings.Contains(s, field) {
-			t.Errorf("SignalSummaryOutput JSON missing field %q", field)
-		}
-	}
-	if !strings.Contains(s, `"actionable_fail":7`) {
-		t.Error("expected actionable_fail=7 in JSON")
 	}
 }
 
@@ -947,64 +921,6 @@ func TestTrustGuidance_HumanRequired(t *testing.T) {
 	}
 }
 
-func TestTrustGuidance_JSONSerialization(t *testing.T) {
-	out := &VerifyOutput{
-		Report: ReportOutput{
-			TrustGuidance: TrustGuidance{
-				CanAutomate:      true,
-				RequiresReview:   false,
-				DegradedAnalysis: false,
-				Summary:          "All findings are machine-trusted and verified. Safe for automated consumption.",
-			},
-		},
-	}
-	data, err := json.Marshal(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(data)
-	if !strings.Contains(s, `"trust_guidance"`) {
-		t.Error("JSON should contain trust_guidance")
-	}
-	if !strings.Contains(s, `"can_automate":true`) {
-		t.Error("JSON should contain can_automate field")
-	}
-	if !strings.Contains(s, `"requires_review":false`) {
-		t.Error("JSON should contain requires_review field")
-	}
-
-	var rt VerifyOutput
-	if err := json.Unmarshal(data, &rt); err != nil {
-		t.Fatal(err)
-	}
-	if !rt.Report.TrustGuidance.CanAutomate {
-		t.Error("round-trip should preserve can_automate=true")
-	}
-}
-
-func TestCapabilitySummaryOutput_JSONSerialization(t *testing.T) {
-	out := &VerifyOutput{
-		Report: ReportOutput{
-			CapabilitySummary: CapabilitySummaryOutput{
-				FullySupported: 5,
-				Partial:        3,
-				Unsupported:    1,
-				Degraded:       true,
-			},
-		},
-	}
-	data, err := json.Marshal(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(data)
-	if !strings.Contains(s, `"capability_summary"`) {
-		t.Error("JSON should contain capability_summary")
-	}
-	if !strings.Contains(s, `"fully_supported":5`) {
-		t.Error("JSON should contain fully_supported count")
-	}
-}
 
 func TestWithAnalyzerPluginError(t *testing.T) {
 	repoDir := t.TempDir()

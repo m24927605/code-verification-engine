@@ -3,7 +3,7 @@ package rules
 import "sort"
 
 // ReleaseBlockingPriorityRuleIDs returns the audited set of rule IDs whose
-// native rule-to-issue migration state is release-blocking for v2 closeout.
+// native rule-to-issue migration state is release-blocking for closeout.
 func ReleaseBlockingPriorityRuleIDs() []string {
 	ids := []string{
 		"SEC-SECRET-001",

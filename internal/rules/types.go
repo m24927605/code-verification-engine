@@ -86,7 +86,7 @@ const (
 	TrustHumanOrRuntimeRequired TrustClass = "human_or_runtime_required"
 )
 
-// MigrationState tracks how far a rule family has progressed along the v2
+// MigrationState tracks how far a rule family has progressed along the
 // native rule-to-issue migration path.
 type MigrationState string
 

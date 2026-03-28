@@ -8,7 +8,7 @@ Accepted
 
 The existing engine already extracts facts and emits findings, but the system still behaves primarily like an analysis pipeline. Findings are produced early, evidence is attached rather than centralized, and downstream interpretation is not consistently grounded in a single normalized evidence model.
 
-The v2 system must support:
+The engine must support:
 
 - verifiable outputs
 - issue traceability
@@ -62,4 +62,4 @@ Rejected because:
 
 - implement `EvidenceRecord` first
 - adapt existing analyzer and rule outputs into the shared evidence layer
-- delay removal of old finding projections until v2 bundle output is stable
+- delay removal of old finding projections until canonical artifact output is stable

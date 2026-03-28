@@ -507,12 +507,12 @@ func TestInitScenarioFixtureRepo_SuccessCopiesFixtureContent(t *testing.T) {
 func TestCompatRunnerAndDeterminismErrorBranches(t *testing.T) {
 	t.Parallel()
 
-	if _, err := RunCompatFixture(CompatFixture{}); err == nil {
-		t.Fatal("expected compat build failure for empty fixture")
+	if _, err := RunFixture(Fixture{}); err == nil {
+		t.Fatal("expected build failure for empty fixture")
 	}
 
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -544,20 +544,20 @@ func TestCompatRunnerAndDeterminismErrorBranches(t *testing.T) {
 			EngineVersion: "verabase@dev",
 		},
 		Manifest: FixtureManifest{
-			FixtureID:          "compat-mismatch",
+			FixtureID:          "fixture-mismatch",
 			FixtureType:        "micro",
 			ExpectedIssueCount: 2,
 		},
 	}
-	if _, err := RunCompatFixture(fixture); err == nil {
-		t.Fatal("expected manifest mismatch from compat runner")
+	if _, err := RunFixture(fixture); err == nil {
+		t.Fatal("expected manifest mismatch from fixture runner")
 	}
 
 	validFixture := fixture
 	validFixture.Manifest.ExpectedIssueCount = 1
-	result, err := RunCompatFixture(validFixture)
+	result, err := RunFixture(validFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(valid): %v", err)
+		t.Fatalf("RunFixture(valid): %v", err)
 	}
 
 	invalidFirst := result.Bundle

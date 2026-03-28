@@ -1,6 +1,6 @@
 package artifactsv2
 
-// Versioned schema identifiers for the v2 verifiable artifact bundle.
+// Versioned schema identifiers for the verifiable artifact bundle.
 const (
 	ReportSchemaVersion    = "2.0.0"
 	EvidenceSchemaVersion  = "2.0.0"

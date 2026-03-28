@@ -445,7 +445,7 @@ func TestRunPluginNoMatchingFiles(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Run: exercises the claimReport recalculation path
-// (claimSet != nil && claimReport == nil after v2 pipeline)
+// (claimSet != nil && claimReport == nil after the artifact pipeline)
 // ---------------------------------------------------------------------------
 
 func TestRunWithClaimSetRecalculation(t *testing.T) {

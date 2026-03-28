@@ -1,10 +1,10 @@
-# Code Verification Engine v2 Acceptance Harness Expansion Plan
+# Code Verification Engine Acceptance Harness Expansion Plan
 
 ## 1. Purpose
 
-This document defines the next expansion phase for the v2 acceptance harness.
+This document defines the next expansion phase for the engine acceptance harness.
 
-The harness already has a minimal executable skeleton. The next goal is to grow it into a practical regression wall for the deterministic v2 core without turning it into an oversized framework.
+The harness already has a minimal executable skeleton. The next goal is to grow it into a practical regression wall for the deterministic core without turning it into an oversized framework.
 
 ## 2. Current State
 
@@ -13,7 +13,7 @@ The acceptance harness already includes:
 1. fixture manifest shape
 2. bundle assertions
 3. deterministic hash assertions
-4. executable compatibility fixture runner
+4. executable artifact fixture runner
 5. a small set of critical regression fixtures
 
 ## 3. Expansion Objectives
@@ -81,4 +81,3 @@ Harness expansion is complete for this phase only when:
 1. current deterministic weak spots are covered by fixtures
 2. the harness remains fast enough for local execution
 3. failures are understandable and directly actionable
-

@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Step is a single required command in the local V2 release gate.
+// Step is a single required command in the local release gate.
 type Step struct {
 	Name    string
 	Command []string
@@ -38,7 +38,7 @@ type ManualCheck struct {
 // Executor runs a gate step command.
 type Executor func(ctx context.Context, command []string) (string, error)
 
-// DefaultSteps returns the authoritative local V2 release gate command list.
+// DefaultSteps returns the authoritative local release gate command list.
 func DefaultSteps() []Step {
 	return []Step{
 		{Name: "rules", Command: []string{"go", "test", "./internal/rules"}},
@@ -53,7 +53,7 @@ func DefaultSteps() []Step {
 }
 
 // RequiredManualChecks returns the documented manual confirmations required
-// before a v2 release can be considered ready.
+// before a release can be considered ready.
 func RequiredManualChecks() []ManualCheck {
 	return []ManualCheck{
 		{Name: "native-rule-migration", Description: "native rule migration fixtures across issue_native, seed_native, and finding_bridged are green"},
@@ -68,7 +68,7 @@ func RequiredManualChecks() []ManualCheck {
 	}
 }
 
-// Run executes the local V2 release gate using the provided executor.
+// Run executes the local release gate using the provided executor.
 func Run(ctx context.Context, execFn Executor) Result {
 	if execFn == nil {
 		execFn = DefaultExecutor

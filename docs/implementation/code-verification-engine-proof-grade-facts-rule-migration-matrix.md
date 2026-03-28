@@ -28,7 +28,7 @@ The following migration classes are used in this matrix:
 
 Each row below defines:
 
-- legacy rule or target
+- historical rule or target
 - target claim family
 - migration class
 - decisive proof facts
@@ -172,7 +172,7 @@ Claude Code should apply this matrix as follows:
 1. do not upgrade a family to proof-grade unless this matrix says `proof_now` or the prerequisite fact upgrade has been completed and corresponding tests are green
 2. if a rule family is ambiguous, prefer splitting into narrower claims over keeping a broad heuristic rule
 3. when migrating a negative rule, implement fail-path correctness before strong absence-pass correctness
-4. preserve compatibility mapping from legacy rule ID to new claim family in trace or migration metadata
+4. preserve audit mapping from historical rule ID to new claim family in trace or migration metadata
 
 ## 10. Definition of Migration Readiness
 

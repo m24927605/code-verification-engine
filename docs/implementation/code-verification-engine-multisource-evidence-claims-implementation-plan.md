@@ -2,9 +2,9 @@
 
 ## 1. Purpose
 
-This document defines the implementation plan for adding multi-source evidence claims and evidence-backed capability profile generation on top of the current v2 core.
+This document defines the implementation plan for adding multi-source evidence claims and evidence-backed capability profile generation on top of the current canonical core.
 
-The implementation must preserve the existing v2 release guarantees while adding a new, stricter path for high-value profile extraction.
+The implementation must preserve the existing release guarantees while adding a new, stricter path for high-value profile extraction.
 
 ## 2. Implementation Objectives
 
@@ -13,7 +13,7 @@ The implementation must:
 1. model `README`, `docs`, `code`, `tests`, and `eval` as evidence sources
 2. extend the current claim subsystem rather than bypass it
 3. keep the claim verification path deterministic by default
-4. preserve current v2 evidence/report/trace/skills artifacts
+4. preserve current evidence/report/trace/skills artifacts
 5. create bounded inputs for later LLM narrative synthesis
 
 ## 3. Baseline Context
@@ -22,7 +22,7 @@ The repo already contains:
 
 - deterministic issue and evidence pipeline
 - `internal/claims` claim-centric output
-- evidence-backed v2 artifacts
+- evidence-backed canonical artifacts
 - acceptance harness
 - release gate
 
@@ -39,7 +39,7 @@ This work should be implemented incrementally in six phases.
 
 Rules:
 
-- preserve current v2 behavior while adding new capability
+- preserve current behavior while adding new capability
 - add contracts before broad extraction logic
 - keep resume synthesis as a final projection, not a core evaluator
 - do not introduce non-deterministic repo-wide reasoning
@@ -211,7 +211,7 @@ Refactor goals:
 Refactor goals:
 
 - expose profile and claims artifacts through the public API
-- preserve backward compatibility for current verification output
+- preserve current verification output continuity during migration
 
 ### 11.4 `internal/acceptance`
 

@@ -482,7 +482,7 @@ func ValidateClaimsArtifact(a ClaimsArtifact) error {
 		}
 		if !claim.ProjectionEligible && (claim.SupportLevel == "verified" || claim.SupportLevel == "strongly_supported") {
 			// Conservative by default: verified or strongly_supported claims should normally
-			// be projection eligible, but we do not fail this path to preserve compatibility
+			// be projection eligible, but we do not fail this path to preserve output continuity
 			// with gradual migration fixtures.
 		}
 	}

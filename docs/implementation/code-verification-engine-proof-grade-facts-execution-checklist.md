@@ -15,7 +15,7 @@ Claude Code must follow these rules throughout implementation:
 1. do not start broad matcher rewrites before contracts and schemas are in place
 2. do not mark any rule family as `proof_grade` until the required fixtures for that family are green
 3. prefer downgrade to `unknown` over fallback heuristic overclaim
-4. preserve current v2 outputs unless a contract change explicitly requires a new field or artifact
+4. preserve current outputs unless a contract change explicitly requires a new field or artifact
 5. make changes in small, reviewable slices and keep tests green after each slice
 6. do not silently merge `structural_inference` into proof-grade scenario outputs
 
@@ -97,7 +97,7 @@ Add artifact builders and writer plumbing while returning empty or placeholder-s
 1. add builder skeletons for:
    - outsource acceptance artifact
    - PM acceptance artifact
-2. wire artifact writing into the v2 bundle path
+2. wire artifact writing into the canonical artifact path
 3. extend trace generation with projection metadata if required
 4. keep all row derivation conservative while rule migration is incomplete
 
@@ -466,14 +466,14 @@ Document and expose the migration relationship between old rule IDs and new clai
 
 ### Required Work
 
-1. add migration metadata to trace or compatibility artifacts
-2. preserve legacy identifiers where useful for audits
+1. add migration metadata to trace or verifiable artifacts
+2. preserve historical identifiers where useful for audits
 3. update docs if any contract names or enum values shifted during implementation
 
 ### Tests Required
 
 - trace reference integrity tests
-- compatibility bridge tests if applicable
+- bridge-removal regression tests if applicable
 
 ### Stop Condition
 

@@ -68,14 +68,15 @@ type Result struct {
 	ExitCode                  int
 	Scan                      report.ScanReport
 	Report                    report.VerificationReport
+	Findings                  []rules.Finding
 	Accounting                *ScanAccounting                // per-file analysis accounting
 	ClaimReport               *claims.ClaimReport            // nil if no claim set specified
 	EvidenceGraph             *evidencegraph.EvidenceGraph   // evidence relationship graph
 	InterpretedReport         *interpret.InterpretedReport   // nil if interpretation disabled
 	SkillReport               *skills.Report                 // nil if mode does not include skill_inference
-	VerifiableIssueSet        *artifactsv2.IssueCandidateSet // canonical deterministic v2 verification product
-	VerifiableEvidenceStore   *artifactsv2.EvidenceStore     // intermediate evidence-first store for v2 compatibility path
-	VerifiableIssueCandidates []artifactsv2.IssueCandidate   // intermediate issue candidates for v2 compatibility path
+	VerifiableIssueSet        *artifactsv2.IssueCandidateSet // canonical deterministic verification product
+	VerifiableEvidenceStore   *artifactsv2.EvidenceStore     // intermediate evidence-first store for verifiable artifact generation
+	VerifiableIssueCandidates []artifactsv2.IssueCandidate   // intermediate issue candidates for verifiable artifact generation
 	VerifiableBundle          *artifactsv2.Bundle            // nil if verifiable bundle generation failed or is disabled
 	VerifiableClaimsArtifacts *artifactsv2.ClaimsProjectionArtifacts
 	Errors                    []string
@@ -433,8 +434,33 @@ func Run(cfg Config) Result {
 	analysisDegraded := !pyanalyzer.PythonASTAvailable() && containsLanguage(meta.Languages, "python")
 	ruleMetadata := artifactsv2.RuleMetadataFromRuleFile(ruleFile)
 
+	var agentExecutor artifactsv2.AgentExecutor
+	if cfg.AgentRuntime && cfg.AgentProvider != nil {
+		agentExecutor = NewLLMAgentExecutor(ctx, cfg.AgentProvider, scanReport, "verabase@dev")
+	}
+	issueSet, err := artifactsv2.BuildIssueCandidateSet(artifactsv2.IssueCandidateBuildInput{
+		Scan: scanReport,
+		Verification: artifactsv2.VerificationSource{
+			ReportSchemaVersion: schema.ReportSchemaVersion,
+			Findings:            append([]rules.Finding(nil), execResult.Findings...),
+			IssueSeeds:          artifactsv2.IssueSeedsFromRuleSeeds(execResult.IssueSeeds),
+			RuleMetadata:        ruleMetadata,
+			SkippedRules:        append([]rules.SkippedRule(nil), execResult.SkippedRules...),
+			Partial:             partial,
+			Degraded:            analysisDegraded,
+			AnalyzerStatuses:    copyStringMap(analyzerStatuses),
+			Errors:              append([]string(nil), analyzerErrors...),
+		},
+		AgentExecutor: agentExecutor,
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build issue candidate set: %v", err)}}
+	}
+
 	verReport := report.GenerateVerificationReport(report.ReportInput{
 		Partial:      partial,
+		Issues:       projectReportIssues(issueSet.IssueCandidates, issueSet.Evidence.Evidence, execResult.Findings, ruleIndex),
 		Findings:     execResult.Findings,
 		RuleMetadata: ruleIndex,
 		SkippedRules: execResult.SkippedRules,
@@ -448,7 +474,8 @@ func Run(cfg Config) Result {
 	var contractErrors []string
 	if contractErrs := schema.ValidateReportContract(schema.ReportContractInput{
 		ReportSchemaVersion:          verReport.ReportSchemaVersion,
-		Findings:                     verReport.Findings,
+		Issues:                       toReportIssueContracts(verReport.Issues),
+		Findings:                     execResult.Findings,
 		SummaryPass:                  verReport.Summary.Pass,
 		SummaryFail:                  verReport.Summary.Fail,
 		SummaryUnknown:               verReport.Summary.Unknown,
@@ -589,54 +616,31 @@ func Run(cfg Config) Result {
 			skillReport.Summary.Observed, skillReport.Summary.Inferred, skillReport.Summary.Unsupported)
 	}
 
-	// Compatibility bridge: emit the v2 verifiable artifact bundle under a
-	// dedicated subdirectory so the current public output contract remains intact
-	// while the engine transitions to the new evidence-first model.
-	var agentExecutor artifactsv2.AgentExecutor
-	if cfg.AgentRuntime && cfg.AgentProvider != nil {
-		agentExecutor = NewLLMAgentExecutor(ctx, cfg.AgentProvider, scanReport, "verabase@dev")
-	}
-	v2Build, err := artifactsv2.BuildCompatArtifacts(artifactsv2.CompatBuildInput{
-		Scan: scanReport,
-		Verification: artifactsv2.VerificationSource{
-			ReportSchemaVersion: verReport.ReportSchemaVersion,
-			Findings:            append([]rules.Finding(nil), execResult.Findings...),
-			IssueSeeds:          artifactsv2.IssueSeedsFromRuleSeeds(execResult.IssueSeeds),
-			RuleMetadata:        ruleMetadata,
-			SkippedRules:        append([]rules.SkippedRule(nil), execResult.SkippedRules...),
-			Partial:             partial,
-			Degraded:            analysisDegraded,
-			AnalyzerStatuses:    copyStringMap(analyzerStatuses),
-			Errors:              append([]string(nil), analyzerErrors...),
-		},
-		AgentExecutor: agentExecutor,
-		SkillReport:   skillReport,
-		EngineVersion: "verabase@dev",
-	})
+	// Emit the canonical evidence-first artifact bundle under `verifiable/`.
+	verifiableBundle, err := artifactsv2.BuildBundleFromIssueCandidateSet(issueSet, skillReport)
 	if err != nil {
 		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build verifiable bundle: %v", err)}}
 	}
-	v2Bundle := v2Build.Bundle
 	claimArtifacts, claimSourceEvidence, err := buildClaimsProfileResumeArtifacts(meta, claimSet, execResult, ruleFile, factSet, skillReport)
 	if err != nil {
 		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build claims/profile/resume artifacts: %v", err)}}
 	}
 	if claimArtifacts != nil {
-		v2Bundle.Evidence.Evidence = appendMissingEvidenceRecords(v2Bundle.Evidence.Evidence, adaptClaimSourceEvidenceRecords(
+		verifiableBundle.Evidence.Evidence = appendMissingEvidenceRecords(verifiableBundle.Evidence.Evidence, adaptClaimSourceEvidenceRecords(
 			claimSourceEvidence,
 			scanReport.RepoName,
 			scanReport.CommitSHA,
 			scanReport.ScannedAt,
 		))
-		v2Bundle.Claims = &claimArtifacts.Claims
-		v2Bundle.Profile = &claimArtifacts.Profile
-		v2Bundle.ResumeInput = &claimArtifacts.ResumeInput
+		verifiableBundle.Claims = &claimArtifacts.Claims
+		verifiableBundle.Profile = &claimArtifacts.Profile
+		verifiableBundle.ResumeInput = &claimArtifacts.ResumeInput
 	}
 	outsourceAcceptance, pmAcceptance, err := artifactsv2.BuildScenarioAcceptanceArtifacts(artifactsv2.ScenarioAcceptanceBuildInput{
 		RepoIdentity: scanReport.RepoName,
 		Commit:       scanReport.CommitSHA,
-		TraceID:      v2Bundle.Trace.TraceID,
-		Claims:       v2Bundle.Claims,
+		TraceID:      verifiableBundle.Trace.TraceID,
+		Claims:       verifiableBundle.Claims,
 		Options: artifactsv2.ScenarioBuildOptions{
 			OutsourceAcceptanceProfile: cfg.OutsourceAcceptanceProfile,
 			PMAcceptanceProfile:        cfg.PMAcceptanceProfile,
@@ -645,13 +649,13 @@ func Run(cfg Config) Result {
 	if err != nil {
 		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("build scenario acceptance artifacts: %v", err)}}
 	}
-	v2Bundle.OutsourceAcceptance = outsourceAcceptance
-	v2Bundle.PMAcceptance = pmAcceptance
-	v2OutputDir := filepath.Join(cfg.OutputDir, "verifiable")
-	if err := artifactsv2.WriteBundle(v2OutputDir, &v2Bundle, "verabase"); err != nil {
+	verifiableBundle.OutsourceAcceptance = outsourceAcceptance
+	verifiableBundle.PMAcceptance = pmAcceptance
+	verifiableOutputDir := filepath.Join(cfg.OutputDir, "verifiable")
+	if err := artifactsv2.WriteBundle(verifiableOutputDir, &verifiableBundle, "verabase"); err != nil {
 		return Result{ExitCode: 5, Errors: []string{fmt.Sprintf("write verifiable bundle: %v", err)}}
 	}
-	fmt.Fprintf(progress, "[INFO] verifiable bundle written to: %s\n", v2OutputDir)
+	fmt.Fprintf(progress, "[INFO] verifiable bundle written to: %s\n", verifiableOutputDir)
 
 	// Preserve the historical engine contract: when a claim set is requested and
 	// evaluation completed, Result.ClaimReport must be populated even if later
@@ -674,18 +678,31 @@ func Run(cfg Config) Result {
 		ExitCode:                  exitCode,
 		Scan:                      scanReport,
 		Report:                    verReport,
+		Findings:                  append([]rules.Finding(nil), execResult.Findings...),
 		Accounting:                &accounting,
 		ClaimReport:               claimReport,
 		EvidenceGraph:             evGraph,
 		InterpretedReport:         interpretedReport,
 		SkillReport:               skillReport,
-		VerifiableIssueSet:        v2Build.IssueSet,
-		VerifiableEvidenceStore:   v2Build.EvidenceStore,
-		VerifiableIssueCandidates: append([]artifactsv2.IssueCandidate(nil), v2Build.IssueCandidates...),
-		VerifiableBundle:          &v2Bundle,
+		VerifiableIssueSet:        issueSet,
+		VerifiableEvidenceStore:   issueSet.EvidenceStore,
+		VerifiableIssueCandidates: append([]artifactsv2.IssueCandidate(nil), issueSet.IssueCandidates...),
+		VerifiableBundle:          &verifiableBundle,
 		VerifiableClaimsArtifacts: claimArtifacts,
 		Errors:                    analyzerErrors,
 	}
+}
+
+func toReportIssueContracts(issues []report.Issue) []schema.ReportIssueContract {
+	out := make([]schema.ReportIssueContract, 0, len(issues))
+	for _, issue := range issues {
+		out = append(out, schema.ReportIssueContract{
+			Title:    issue.Title,
+			Category: issue.Category,
+			Status:   issue.Status,
+		})
+	}
+	return out
 }
 
 func filterAnalyzers(all []analyzers.Analyzer, languages []string) []analyzers.Analyzer {
@@ -801,6 +818,184 @@ func mergeTypeGraphs(results []*analyzers.AnalysisResult) *typegraph.TypeGraph {
 		}
 	}
 	return merged
+}
+
+func projectReportIssues(candidates []artifactsv2.IssueCandidate, evidence []artifactsv2.EvidenceRecord, findings []rules.Finding, ruleIndex map[string]rules.Rule) []report.Issue {
+	evidenceIndex := make(map[string]artifactsv2.EvidenceRecord, len(evidence))
+	for _, record := range evidence {
+		evidenceIndex[record.ID] = record
+	}
+	findingsByRule := make(map[string][]rules.Finding)
+	for _, finding := range findings {
+		findingsByRule[finding.RuleID] = append(findingsByRule[finding.RuleID], finding)
+	}
+
+	issues := make([]report.Issue, 0, len(candidates))
+	for _, candidate := range candidates {
+		primaryRuleID := ""
+		if len(candidate.RuleIDs) > 0 {
+			primaryRuleID = candidate.RuleIDs[0]
+		}
+		relatedFindings := make([]rules.Finding, 0)
+		for _, ruleID := range candidate.RuleIDs {
+			relatedFindings = append(relatedFindings, findingsByRule[ruleID]...)
+		}
+		issues = append(issues, report.Issue{
+			ID:             candidate.ID,
+			RuleID:         primaryRuleID,
+			RuleIDs:        append([]string(nil), candidate.RuleIDs...),
+			Title:          candidate.Title,
+			Category:       candidate.Category,
+			Severity:       candidate.Severity,
+			Status:         candidate.Status,
+			Confidence:     candidate.ConfidenceClass,
+			TrustClass:     aggregateIssueTrustClass(candidate.RuleIDs),
+			Capability:     aggregateIssueCapability(relatedFindings),
+			SignalClass:    string(report.ClassifyIssueSignal(projectSignalIssue(candidate, evidenceIndex, primaryRuleID), ruleIndex)),
+			FactQuality:    aggregateIssueFactQuality(relatedFindings),
+			EvidenceIDs:    append([]string(nil), candidate.EvidenceIDs...),
+			Evidence:       projectIssueEvidence(candidate.EvidenceIDs, evidenceIndex),
+			UnknownReasons: aggregateUnknownReasons(relatedFindings),
+		})
+	}
+	return issues
+}
+
+func projectSignalIssue(candidate artifactsv2.IssueCandidate, evidenceIndex map[string]artifactsv2.EvidenceRecord, primaryRuleID string) report.Issue {
+	return report.Issue{
+		RuleID:   primaryRuleID,
+		Category: candidate.Category,
+		Status:   candidate.Status,
+		Evidence: projectIssueEvidence(candidate.EvidenceIDs, evidenceIndex),
+	}
+}
+
+func projectIssueEvidence(evidenceIDs []string, evidenceIndex map[string]artifactsv2.EvidenceRecord) []report.IssueEvidence {
+	out := make([]report.IssueEvidence, 0, len(evidenceIDs))
+	for _, id := range evidenceIDs {
+		record, ok := evidenceIndex[id]
+		if !ok || len(record.Locations) == 0 {
+			out = append(out, report.IssueEvidence{ID: id})
+			continue
+		}
+		loc := record.Locations[0]
+		out = append(out, report.IssueEvidence{
+			ID:        id,
+			File:      loc.RepoRelPath,
+			LineStart: loc.StartLine,
+			LineEnd:   loc.EndLine,
+			Symbol:    loc.SymbolID,
+		})
+	}
+	return out
+}
+
+func aggregateIssueTrustClass(ruleIDs []string) string {
+	worst := rules.TrustMachineTrusted
+	for _, ruleID := range ruleIDs {
+		tc := rules.ClassifyTrustClass(ruleID)
+		switch tc {
+		case rules.TrustHumanOrRuntimeRequired:
+			return string(tc)
+		case rules.TrustAdvisory:
+			worst = tc
+		}
+	}
+	return string(worst)
+}
+
+func aggregateIssueCapability(findings []rules.Finding) string {
+	if len(findings) == 0 {
+		return "fully_supported"
+	}
+	capability := "fully_supported"
+	for _, finding := range findings {
+		current := reportIssueCapabilityFromFinding(finding)
+		if current == "unsupported" {
+			return current
+		}
+		if current == "partial" {
+			capability = current
+		}
+	}
+	return capability
+}
+
+func reportIssueCapabilityFromFinding(f rules.Finding) string {
+	for _, reason := range f.UnknownReasons {
+		if reason == rules.UnknownCapabilityUnsupported {
+			return "unsupported"
+		}
+	}
+	for _, reason := range f.UnknownReasons {
+		if reason == rules.UnknownCapabilityPartial ||
+			reason == rules.UnknownCapabilityDegraded ||
+			reason == rules.UnknownFactExtractionGap ||
+			reason == rules.UnknownMatcherLimitation {
+			return "partial"
+		}
+	}
+	return "fully_supported"
+}
+
+func aggregateIssueFactQuality(findings []rules.Finding) string {
+	if len(findings) == 0 {
+		return "heuristic"
+	}
+	score := map[string]int{
+		"runtime_required": 0,
+		"heuristic":        1,
+		"structural":       2,
+		"proof":            3,
+	}
+	best := 3
+	quality := "proof"
+	for _, finding := range findings {
+		current := normalizeIssueFactQuality(finding)
+		if score[current] < best {
+			best = score[current]
+			quality = current
+		}
+	}
+	return quality
+}
+
+func normalizeIssueFactQuality(f rules.Finding) string {
+	switch f.VerdictBasis {
+	case "proof":
+		return "proof"
+	case "structural_binding":
+		return "structural"
+	case "runtime_required":
+		return "runtime_required"
+	default:
+		switch f.FactQualityFloor {
+		case "proof":
+			return "proof"
+		case "structural":
+			return "structural"
+		case "runtime_required":
+			return "runtime_required"
+		default:
+			return "heuristic"
+		}
+	}
+}
+
+func aggregateUnknownReasons(findings []rules.Finding) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+	for _, finding := range findings {
+		for _, reason := range finding.UnknownReasons {
+			if _, ok := seen[reason]; ok {
+				continue
+			}
+			seen[reason] = struct{}{}
+			out = append(out, reason)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func languageExtensions(lang string) []string {

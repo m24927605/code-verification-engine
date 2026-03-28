@@ -177,7 +177,7 @@ func buildSkillsArtifact(scan report.ScanReport, skillReport *skills.Report, eng
 			evIDs = dedupeStringsSorted(append(evIDs, collectEvidenceIDsForIssues(contributingIssueIDs, issueToEvidenceIDs)...))
 		}
 		if len(contributingIssueIDs) == 0 || len(evIDs) == 0 {
-			// V2 skills.json is evidence-derived. Legacy skill signals that cannot
+			// skills.json is evidence-derived. Legacy skill signals that cannot
 			// be traced back into issue/evidence contributors must remain in the
 			// legacy skill report only, not the verifiable skills artifact.
 			continue

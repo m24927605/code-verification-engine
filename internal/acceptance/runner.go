@@ -6,20 +6,20 @@ import (
 	"github.com/verabase/code-verification-engine/internal/artifactsv2"
 )
 
-// RunCompatFixture executes a deterministic v2 compatibility fixture and
-// validates both artifact expectations and optional determinism guarantees.
-func RunCompatFixture(fixture CompatFixture) (*artifactsv2.CompatBuildResult, error) {
-	first, err := artifactsv2.BuildCompatArtifacts(fixture.Input)
+// RunFixture executes a deterministic artifact fixture and validates both
+// artifact expectations and optional determinism guarantees.
+func RunFixture(fixture Fixture) (*artifactsv2.BuildResult, error) {
+	first, err := artifactsv2.BuildArtifacts(fixture.Input)
 	if err != nil {
-		return nil, fmt.Errorf("build compat artifacts: %w", err)
+		return nil, fmt.Errorf("build artifacts: %w", err)
 	}
 	if err := AssertBundleAgainstFixture(first.Bundle, fixture.Manifest); err != nil {
 		return nil, err
 	}
 	if fixture.Manifest.ExpectedBundleHashStable {
-		second, err := artifactsv2.BuildCompatArtifacts(fixture.Input)
+		second, err := artifactsv2.BuildArtifacts(fixture.Input)
 		if err != nil {
-			return nil, fmt.Errorf("rebuild compat artifacts: %w", err)
+			return nil, fmt.Errorf("rebuild artifacts: %w", err)
 		}
 		if err := AssertBundleDeterministic(first.Bundle, second.Bundle); err != nil {
 			return nil, err
@@ -27,4 +27,3 @@ func RunCompatFixture(fixture CompatFixture) (*artifactsv2.CompatBuildResult, er
 	}
 	return first, nil
 }
-

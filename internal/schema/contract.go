@@ -27,6 +27,7 @@ import (
 // This avoids importing the report package (which already imports schema).
 type ReportContractInput struct {
 	ReportSchemaVersion string
+	Issues              []ReportIssueContract
 	Findings            []rules.Finding
 	SummaryPass         int
 	SummaryFail         int
@@ -36,6 +37,14 @@ type ReportContractInput struct {
 	SignalAdvisoryFail           int
 	SignalInformationalDetection int
 	SignalUnknown                int
+}
+
+// ReportIssueContract is the issue-centric subset needed for report.json
+// contract validation without depending on the report package.
+type ReportIssueContract struct {
+	Title    string
+	Category string
+	Status   string
 }
 
 // ScanContractInput holds the fields needed to validate a scan report contract.
@@ -62,6 +71,9 @@ func ValidateReportContract(input ReportContractInput) []error {
 		if err := ValidateVerificationLevel(f); err != nil {
 			errs = append(errs, fmt.Errorf("findings[%d]: %w", i, err))
 		}
+	}
+	if len(input.Issues) > 0 {
+		return append(errs, validateIssueReportContract(input)...)
 	}
 	// Summary must match findings
 	pass, fail, unknown := 0, 0, 0
@@ -92,6 +104,45 @@ func ValidateReportContract(input ReportContractInput) []error {
 			input.SignalUnknown, unknown))
 	}
 
+	return errs
+}
+
+func validateIssueReportContract(input ReportContractInput) []error {
+	var errs []error
+	pass, fail, unknown := 0, 0, 0
+	for i, issue := range input.Issues {
+		if issue.Title == "" {
+			errs = append(errs, fmt.Errorf("issues[%d]: title is required", i))
+		}
+		if issue.Status == "" {
+			errs = append(errs, fmt.Errorf("issues[%d]: status is required", i))
+		}
+		if issue.Category == "" {
+			errs = append(errs, fmt.Errorf("issues[%d]: category is required", i))
+		}
+		switch issue.Status {
+		case "resolved", "pass":
+			pass++
+		case "unknown":
+			unknown++
+		case "open", "fail":
+			fail++
+		default:
+			errs = append(errs, fmt.Errorf("issues[%d]: invalid status %q", i, issue.Status))
+		}
+	}
+	if input.SummaryPass != pass || input.SummaryFail != fail || input.SummaryUnknown != unknown {
+		errs = append(errs, fmt.Errorf("summary counts don't match issues: pass=%d/%d fail=%d/%d unknown=%d/%d",
+			input.SummaryPass, pass, input.SummaryFail, fail, input.SummaryUnknown, unknown))
+	}
+	signalTotal := input.SignalActionableFail + input.SignalAdvisoryFail + input.SignalInformationalDetection
+	if signalTotal != fail {
+		errs = append(errs, fmt.Errorf("signal_summary fail partition mismatch: actionable(%d)+advisory(%d)+informational(%d)=%d, want fail=%d",
+			input.SignalActionableFail, input.SignalAdvisoryFail, input.SignalInformationalDetection, signalTotal, fail))
+	}
+	if input.SignalUnknown != unknown {
+		errs = append(errs, fmt.Errorf("signal_summary.unknown mismatch: got %d, want %d", input.SignalUnknown, unknown))
+	}
 	return errs
 }
 

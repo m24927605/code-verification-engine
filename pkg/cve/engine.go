@@ -166,86 +166,6 @@ func (e *defaultEngine) Verify(ctx context.Context, input VerifyInput) (*VerifyO
 		Profile:           result.Scan.Profile,
 	}
 
-	// Convert internal findings to typed public output with trust summary
-	var trustSummary TrustSummary
-	findings := make([]FindingOutput, 0, len(result.Report.Findings))
-	for _, f := range result.Report.Findings {
-		evidence := make([]EvidenceOutput, 0, len(f.Evidence))
-		for _, ev := range f.Evidence {
-			evidence = append(evidence, EvidenceOutput{
-				ID:        ev.ID,
-				File:      ev.File,
-				LineStart: ev.LineStart,
-				LineEnd:   ev.LineEnd,
-				Symbol:    ev.Symbol,
-				Excerpt:   ev.Excerpt,
-			})
-		}
-		fo := FindingOutput{
-			RuleID:            f.RuleID,
-			Status:            string(f.Status),
-			Confidence:        string(f.Confidence),
-			VerificationLevel: string(f.VerificationLevel),
-			TrustClass:        string(f.TrustClass),
-			Message:           f.Message,
-			Evidence:          evidence,
-			UnknownReasons:    f.UnknownReasons,
-		}
-		findings = append(findings, fo)
-
-		switch f.TrustClass {
-		case rules.TrustMachineTrusted:
-			trustSummary.MachineTrusted++
-		case rules.TrustAdvisory:
-			trustSummary.Advisory++
-		case rules.TrustHumanOrRuntimeRequired:
-			trustSummary.HumanOrRuntimeRequired++
-		}
-	}
-
-	skipped := make([]SkippedRuleOutput, 0, len(result.Report.SkippedRules))
-	for _, sr := range result.Report.SkippedRules {
-		skipped = append(skipped, SkippedRuleOutput{
-			RuleID: sr.RuleID,
-			Reason: sr.Reason,
-		})
-	}
-
-	// Populate capability summary from internal report
-	capSummary := CapabilitySummaryOutput{
-		FullySupported: result.Report.CapabilitySummary.FullySupported,
-		Partial:        result.Report.CapabilitySummary.Partial,
-		Unsupported:    result.Report.CapabilitySummary.Unsupported,
-		Degraded:       result.Report.CapabilitySummary.Degraded,
-	}
-
-	// Compute trust guidance
-	guidance := computeTrustGuidance(findings, trustSummary, capSummary)
-
-	sigSummary := SignalSummaryOutput{
-		ActionableFail:         result.Report.SignalSummary.ActionableFail,
-		AdvisoryFail:           result.Report.SignalSummary.AdvisoryFail,
-		InformationalDetection: result.Report.SignalSummary.InformationalDetection,
-		Unknown:                result.Report.SignalSummary.Unknown,
-	}
-
-	reportOut := ReportOutput{
-		ReportSchemaVersion: result.Report.ReportSchemaVersion,
-		Partial:             result.Report.Partial,
-		Summary: ReportSummaryOutput{
-			Pass:    result.Report.Summary.Pass,
-			Fail:    result.Report.Summary.Fail,
-			Unknown: result.Report.Summary.Unknown,
-		},
-		TrustSummary:      trustSummary,
-		CapabilitySummary: capSummary,
-		SignalSummary:     sigSummary,
-		TrustGuidance:     guidance,
-		Findings:          findings,
-		SkippedRules:      skipped,
-		Errors:            result.Report.Errors,
-	}
-
 	// Bridge skill report if present
 	var skillOut SkillOutput
 	if result.SkillReport != nil {
@@ -265,6 +185,11 @@ func (e *defaultEngine) Verify(ctx context.Context, input VerifyInput) (*VerifyO
 	var verifiableOut *VerifiableOutput
 	if result.VerifiableBundle != nil {
 		verifiableOut = bridgeVerifiableBundle(result.VerifiableBundle)
+	}
+
+	var reportOut ReportOutput
+	if result.VerifiableBundle != nil {
+		reportOut = bridgeReport(result.VerifiableBundle.Report)
 	}
 
 	return &VerifyOutput{
@@ -581,6 +506,74 @@ func bridgeResumeInputArtifact(in artifactsv2.ResumeInputArtifact) ResumeInputAr
 			EvidenceID:            ref.EvidenceID,
 			ClaimIDs:              append([]string(nil), ref.ClaimIDs...),
 			ContradictoryClaimIDs: append([]string(nil), ref.ContradictoryClaimIDs...),
+		})
+	}
+	return out
+}
+
+func bridgeReport(r artifactsv2.ReportArtifact) ReportOutput {
+	out := ReportOutput{
+		SchemaVersion: r.SchemaVersion,
+		EngineVersion: r.EngineVersion,
+		Repo:          r.Repo,
+		Commit:        r.Commit,
+		Timestamp:     r.Timestamp,
+		TraceID:       r.TraceID,
+		Summary: ReportSummaryOutput{
+			OverallScore: r.Summary.OverallScore,
+			RiskLevel:    r.Summary.RiskLevel,
+			IssueCounts: IssueCountOutput{
+				Critical: r.Summary.IssueCounts.Critical,
+				High:     r.Summary.IssueCounts.High,
+				Medium:   r.Summary.IssueCounts.Medium,
+				Low:      r.Summary.IssueCounts.Low,
+			},
+		},
+	}
+	for _, skill := range r.Skills {
+		out.Skills = append(out.Skills, ReportSkillOutput{
+			SkillID: skill.SkillID,
+			Score:   skill.Score,
+		})
+	}
+	for _, issue := range r.Issues {
+		var breakdown *ConfidenceBreakdownOutput
+		if issue.ConfidenceBreakdown != nil {
+			breakdown = &ConfidenceBreakdownOutput{
+				RuleReliability:      issue.ConfidenceBreakdown.RuleReliability,
+				EvidenceQuality:      issue.ConfidenceBreakdown.EvidenceQuality,
+				BoundaryCompleteness: issue.ConfidenceBreakdown.BoundaryCompleteness,
+				ContextCompleteness:  issue.ConfidenceBreakdown.ContextCompleteness,
+				SourceAgreement:      issue.ConfidenceBreakdown.SourceAgreement,
+				ContradictionPenalty: issue.ConfidenceBreakdown.ContradictionPenalty,
+				LLMPenalty:           issue.ConfidenceBreakdown.LLMPenalty,
+				Final:                issue.ConfidenceBreakdown.Final,
+			}
+		}
+		out.Issues = append(out.Issues, IssueOutput{
+			ID:                 issue.ID,
+			Fingerprint:        issue.Fingerprint,
+			RuleFamily:         issue.RuleFamily,
+			MergeBasis:         issue.MergeBasis,
+			Category:           issue.Category,
+			Title:              issue.Title,
+			Severity:           issue.Severity,
+			Confidence:         issue.Confidence,
+			ConfidenceClass:    issue.ConfidenceClass,
+			PolicyClass:        issue.PolicyClass,
+			Status:             issue.Status,
+			EvidenceIDs:        append([]string(nil), issue.EvidenceIDs...),
+			CounterEvidenceIDs: append([]string(nil), issue.CounterEvidenceIDs...),
+			SkillImpacts:       append([]string(nil), issue.SkillImpacts...),
+			Sources:            append([]string(nil), issue.Sources...),
+			SourceSummary: IssueSourceSummaryOutput{
+				RuleCount:            issue.SourceSummary.RuleCount,
+				DeterministicSources: issue.SourceSummary.DeterministicSources,
+				AgentSources:         issue.SourceSummary.AgentSources,
+				TotalSources:         issue.SourceSummary.TotalSources,
+				MultiSource:          issue.SourceSummary.MultiSource,
+			},
+			ConfidenceBreakdown: breakdown,
 		})
 	}
 	return out

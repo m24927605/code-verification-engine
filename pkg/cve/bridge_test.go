@@ -357,12 +357,12 @@ func TestBridgeVerifiableBundle(t *testing.T) {
 					"SEC-001":  "issue_native",
 				},
 				RuleReasons: map[string]string{
-					"QUAL-001": "v2 path still depends on finding-derived issue semantics",
+					"QUAL-001": "issue path still depends on finding-derived issue semantics",
 					"SEC-001":  "proof-grade secret evidence spans are deterministic and replayable",
 				},
 			},
 			ConfidenceCalibration: &artifactsv2.ConfidenceCalibration{
-				Version:                 "v2-release-blocking-calibration-1",
+				Version:                 "release-blocking-calibration-1",
 				MachineTrustedThreshold: 0.85,
 				UnknownCap:              0.55,
 				AgentOnlyCap:            0.60,

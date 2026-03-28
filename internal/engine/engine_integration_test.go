@@ -879,7 +879,7 @@ func TestRunReportContentValid(t *testing.T) {
 	}
 
 	// Findings should have evidence IDs populated
-	for _, f := range result.Report.Findings {
+	for _, f := range result.Findings {
 		for _, ev := range f.Evidence {
 			if ev.ID == "" {
 				t.Errorf("finding %s has evidence without ID", f.RuleID)

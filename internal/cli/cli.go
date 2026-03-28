@@ -250,7 +250,7 @@ Commands:
   list-profiles        List available built-in verification profiles
   list-claims          List available claim sets for claim-centric verification
   list-skill-profiles  List available skill inference profiles
-  release-gate         Run the local V2 release gate checks
+  release-gate         Run the local release gate checks
   version              Print version and build metadata
 
 Run 'cve <command> -help' for command-specific flags.

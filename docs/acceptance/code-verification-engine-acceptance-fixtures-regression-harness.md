@@ -1,10 +1,10 @@
-# Code Verification Engine v2 Acceptance Fixtures and Regression Harness Specification
+# Code Verification Engine Acceptance Fixtures and Regression Harness Specification
 
 ## 1. Purpose
 
-This document defines the acceptance fixture system and regression harness required to validate Code Verification Engine v2.
+This document defines the acceptance fixture system and regression harness required to validate Code Verification Engine.
 
-The goal is to make v2 verification quality measurable, reproducible, and auditable. The harness is not optional infrastructure. It is part of the product quality boundary.
+The goal is to make verification quality measurable, reproducible, and auditable. The harness is not optional infrastructure. It is part of the product quality boundary.
 
 ## 2. Problem Statement
 
@@ -347,7 +347,7 @@ The acceptance fixture and regression harness is complete only when:
 The harness is successful when:
 
 1. regressions are detected before release
-2. v2 confidence and aggregation changes are measurable
+2. confidence and aggregation changes are measurable
 3. trusted output classes are protected by explicit fixture coverage
 4. the system can justify quality claims with repeatable evidence
 

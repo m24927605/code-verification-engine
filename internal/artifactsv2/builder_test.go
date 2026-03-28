@@ -8,10 +8,10 @@ import (
 	"github.com/verabase/code-verification-engine/internal/skills"
 )
 
-func TestBuildCompatArtifactsReturnsIntermediateResults(t *testing.T) {
+func TestBuildArtifactsReturnsIntermediateResults(t *testing.T) {
 	t.Parallel()
 
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			ScanSchemaVersion: "1.0.0",
 			RepoPath:          "/tmp/repo",
@@ -69,9 +69,9 @@ func TestBuildCompatArtifactsReturnsIntermediateResults(t *testing.T) {
 		EngineVersion: "verabase@dev",
 	}
 
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if result.EvidenceStore == nil {
 		t.Fatalf("expected evidence store")
@@ -99,10 +99,10 @@ func TestBuildCompatArtifactsReturnsIntermediateResults(t *testing.T) {
 	}
 }
 
-func TestBuildCompatArtifactsSupportsIssueSeedSource(t *testing.T) {
+func TestBuildArtifactsSupportsIssueSeedSource(t *testing.T) {
 	t.Parallel()
 
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			ScanSchemaVersion: "1.0.0",
 			RepoPath:          "/tmp/repo",
@@ -133,9 +133,9 @@ func TestBuildCompatArtifactsSupportsIssueSeedSource(t *testing.T) {
 		EngineVersion: "verabase@dev",
 	}
 
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if len(result.IssueCandidates) != 1 {
 		t.Fatalf("expected 1 issue candidate, got %d", len(result.IssueCandidates))
@@ -164,10 +164,10 @@ func TestBuildCompatArtifactsSupportsIssueSeedSource(t *testing.T) {
 	}
 }
 
-func TestBuildCompatArtifactsPreservesExplicitSeedEvidenceID(t *testing.T) {
+func TestBuildArtifactsPreservesExplicitSeedEvidenceID(t *testing.T) {
 	t.Parallel()
 
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			ScanSchemaVersion: "1.0.0",
 			RepoPath:          "/tmp/repo",
@@ -197,9 +197,9 @@ func TestBuildCompatArtifactsPreservesExplicitSeedEvidenceID(t *testing.T) {
 		EngineVersion: "verabase@dev",
 	}
 
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if got := result.Bundle.Evidence.Evidence[0].ID; got != "ev-native-001" {
 		t.Fatalf("expected explicit seed evidence id to be preserved, got %q", got)
@@ -209,10 +209,10 @@ func TestBuildCompatArtifactsPreservesExplicitSeedEvidenceID(t *testing.T) {
 	}
 }
 
-func TestBuildCompatArtifactsExecutesAgentTasksAndRebuildsIssueSet(t *testing.T) {
+func TestBuildArtifactsExecutesAgentTasksAndRebuildsIssueSet(t *testing.T) {
 	t.Parallel()
 
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			ScanSchemaVersion: "1.0.0",
 			RepoPath:          "/tmp/repo",
@@ -262,9 +262,9 @@ func TestBuildCompatArtifactsExecutesAgentTasksAndRebuildsIssueSet(t *testing.T)
 		EngineVersion: "verabase@dev",
 	}
 
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if len(result.IssueSet.Verification.AgentResults) != 1 {
 		t.Fatalf("expected executed agent result to be retained on issue set, got %#v", result.IssueSet.Verification.AgentResults)

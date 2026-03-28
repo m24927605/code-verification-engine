@@ -3,7 +3,7 @@ package rules
 import "strings"
 
 // IssueSeedSemantics captures the canonical issue-oriented semantics that a
-// rule contributes to the native v2 path.
+// rule contributes to the canonical issue path.
 type IssueSeedSemantics struct {
 	Title    string
 	Category string
@@ -91,7 +91,7 @@ func ResolveIssueSeedSemantics(rule Rule, finding Finding) IssueSeedSemantics {
 	}
 }
 
-// RuleMigrationState returns the current v2 migration state for a rule.
+// RuleMigrationState returns the current migration state for a rule.
 // This is intentionally conservative: only explicitly-audited rule IDs are
 // promoted to issue_native. Other deterministic rule families remain
 // seed_native until they have rule-level migration approval.
@@ -119,14 +119,14 @@ func RuleMigrationAuditForRule(rule Rule) RuleMigrationAudit {
 	case MigrationSeedNative:
 		return RuleMigrationAudit{State: MigrationSeedNative, Reason: "deterministic issue seeds exist, but rule-level issue-native audit is incomplete"}
 	case MigrationFindingBridged:
-		return RuleMigrationAudit{State: MigrationFindingBridged, Reason: "v2 path still depends on finding-derived issue semantics"}
+		return RuleMigrationAudit{State: MigrationFindingBridged, Reason: "issue path still depends on finding-derived issue semantics"}
 	default:
-		return RuleMigrationAudit{State: MigrationLegacyOnly, Reason: "no native v2 migration audit recorded"}
+		return RuleMigrationAudit{State: MigrationLegacyOnly, Reason: "no native issue migration audit recorded"}
 	}
 }
 
 // RuleMigrationMatrix returns a copy of the explicit audited rule-level
-// migration records currently recognized by the native v2 path.
+// migration records currently recognized by the canonical issue path.
 func RuleMigrationMatrix() map[string]RuleMigrationAudit {
 	out := make(map[string]RuleMigrationAudit, len(ruleMigrationAudits))
 	for ruleID, audit := range ruleMigrationAudits {

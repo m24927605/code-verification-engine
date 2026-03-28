@@ -5,7 +5,7 @@ import (
 )
 
 // EvidenceStore is a deterministic in-memory index for normalized evidence.
-// It is intentionally small and conservative for the current compatibility path.
+// It is intentionally small and conservative for the current artifact path.
 type EvidenceStore struct {
 	ordered    []EvidenceRecord
 	byID       map[string]EvidenceRecord

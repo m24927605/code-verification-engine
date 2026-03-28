@@ -6,7 +6,7 @@ This document defines the architecture for extending Code Verification Engine fr
 
 The target is not to let README text drive output. The target is to let `README`, `docs`, `code`, `tests`, and `eval` all act as typed evidence sources, then verify high-value claims against those sources before any narrative synthesis is allowed.
 
-This architecture is intended to preserve the existing v2 principles:
+This architecture is intended to preserve the existing architecture principles:
 
 - evidence-first
 - deterministic-first
@@ -370,11 +370,11 @@ The preferred architecture reuses and extends current subsystems.
 - claim graph builder
 - profile projection layer
 
-These may be implemented as new packages or as staged extensions of current packages, but they must preserve current v2 contracts.
+These may be implemented as new packages or as staged extensions of current packages, but they must preserve current canonical contracts.
 
 ## 10. Output Artifacts
 
-The system should add profile-oriented artifacts without weakening current v2 artifacts.
+The system should add profile-oriented artifacts without weakening current canonical artifacts.
 
 Recommended new outputs:
 
@@ -407,7 +407,7 @@ This architecture does not require:
 - trusting free-form marketing language
 - extracting capability claims from arbitrary prose without evidence
 - letting LLMs inspect full repositories without bounded context
-- replacing current v2 issue/evidence artifacts
+- replacing current issue/evidence artifacts
 
 ## 13. Completion Criteria
 

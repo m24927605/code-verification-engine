@@ -103,7 +103,7 @@ The solution has four coordinated parts.
 
 ## Part A: Introduce Finding Outcome Classes
 
-Keep rule-level `status` as-is for backward compatibility, but add a second reporting dimension:
+Keep rule-level `status` as-is for consumer continuity, but add a second reporting dimension:
 
 - `actionable_fail`
 - `advisory_fail`
@@ -301,7 +301,7 @@ Preferred first step:
 
 Create a reporting helper that converts raw findings into:
 
-- legacy summary
+- raw summary
 - trust summary
 - capability summary
 - new signal summary
@@ -404,7 +404,7 @@ Mitigation:
 - keep test-only evidence visible in notes
 - exclude it from blocking summaries, not from existence entirely
 
-### Risk: Backward compatibility of report consumers
+### Risk: report consumer continuity
 
 Mitigation:
 

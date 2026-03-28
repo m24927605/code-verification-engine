@@ -11,13 +11,13 @@ func floatPtr(v float64) *float64 {
 	return &v
 }
 
-func TestRunCompatFixture_NativeSeedDeterministicPath(t *testing.T) {
+func TestRunFixture_NativeSeedDeterministicPath(t *testing.T) {
 	t.Parallel()
 
 	partial := false
 	issueNativeCount := 1
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -67,9 +67,9 @@ func TestRunCompatFixture_NativeSeedDeterministicPath(t *testing.T) {
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if len(result.IssueCandidates) != 1 {
 		t.Fatalf("expected 1 issue candidate, got %d", len(result.IssueCandidates))
@@ -91,13 +91,13 @@ func TestRunCompatFixture_NativeSeedDeterministicPath(t *testing.T) {
 	}
 }
 
-func TestRunCompatFixture_AggregationMergeAndNonMerge(t *testing.T) {
+func TestRunFixture_AggregationMergeAndNonMerge(t *testing.T) {
 	t.Parallel()
 
 	partial := false
 
-	mergeFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	mergeFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -152,9 +152,9 @@ func TestRunCompatFixture_AggregationMergeAndNonMerge(t *testing.T) {
 		},
 	}
 
-	mergeResult, err := RunCompatFixture(mergeFixture)
+	mergeResult, err := RunFixture(mergeFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(merge): %v", err)
+		t.Fatalf("RunFixture(merge): %v", err)
 	}
 	if got := len(mergeResult.Bundle.Report.Issues[0].EvidenceIDs); got != 2 {
 		t.Fatalf("expected merged issue to carry 2 evidence ids, got %d", got)
@@ -163,8 +163,8 @@ func TestRunCompatFixture_AggregationMergeAndNonMerge(t *testing.T) {
 		t.Fatalf("expected merged issue to keep highest severity, got %q", got)
 	}
 
-	nonMergeFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	nonMergeFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: mergeFixture.Input.Scan,
 			Verification: artifactsv2.VerificationSource{
 				ReportSchemaVersion: "1.0.0",
@@ -211,21 +211,21 @@ func TestRunCompatFixture_AggregationMergeAndNonMerge(t *testing.T) {
 		},
 	}
 
-	nonMergeResult, err := RunCompatFixture(nonMergeFixture)
+	nonMergeResult, err := RunFixture(nonMergeFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(non-merge): %v", err)
+		t.Fatalf("RunFixture(non-merge): %v", err)
 	}
 	if got := len(nonMergeResult.Bundle.Report.Issues); got != 2 {
 		t.Fatalf("expected 2 issues for non-merge fixture, got %d", got)
 	}
 }
 
-func TestRunCompatFixture_AggregationDoesNotMergeDifferentArchitectureFamilies(t *testing.T) {
+func TestRunFixture_AggregationDoesNotMergeDifferentArchitectureFamilies(t *testing.T) {
 	t.Parallel()
 
 	partial := false
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -282,9 +282,9 @@ func TestRunCompatFixture_AggregationDoesNotMergeDifferentArchitectureFamilies(t
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if len(result.IssueCandidates) != 2 {
 		t.Fatalf("expected 2 issue candidates, got %d", len(result.IssueCandidates))
@@ -303,7 +303,7 @@ func TestRunCompatFixture_AggregationDoesNotMergeDifferentArchitectureFamilies(t
 	}
 }
 
-func TestRunCompatFixture_ConfidencePenaltyForPartialDegradedScan(t *testing.T) {
+func TestRunFixture_ConfidencePenaltyForPartialDegradedScan(t *testing.T) {
 	t.Parallel()
 
 	baseSeed := artifactsv2.IssueSeed{
@@ -324,8 +324,8 @@ func TestRunCompatFixture_ConfidencePenaltyForPartialDegradedScan(t *testing.T) 
 	partialTrue := true
 	degradedTrue := true
 
-	fullFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fullFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -350,8 +350,8 @@ func TestRunCompatFixture_ConfidencePenaltyForPartialDegradedScan(t *testing.T) 
 			ExpectedBundleHashStable: true,
 		},
 	}
-	penalizedFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	penalizedFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: fullFixture.Input.Scan,
 			Verification: artifactsv2.VerificationSource{
 				ReportSchemaVersion: "1.0.0",
@@ -373,13 +373,13 @@ func TestRunCompatFixture_ConfidencePenaltyForPartialDegradedScan(t *testing.T) 
 		},
 	}
 
-	fullResult, err := RunCompatFixture(fullFixture)
+	fullResult, err := RunFixture(fullFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(full): %v", err)
+		t.Fatalf("RunFixture(full): %v", err)
 	}
-	penalizedResult, err := RunCompatFixture(penalizedFixture)
+	penalizedResult, err := RunFixture(penalizedFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(penalized): %v", err)
+		t.Fatalf("RunFixture(penalized): %v", err)
 	}
 
 	fullConfidence := fullResult.IssueCandidates[0].Confidence
@@ -392,12 +392,12 @@ func TestRunCompatFixture_ConfidencePenaltyForPartialDegradedScan(t *testing.T) 
 	}
 }
 
-func TestRunCompatFixture_ConfidencePenaltyForAgentOnlySupport(t *testing.T) {
+func TestRunFixture_ConfidencePenaltyForAgentOnlySupport(t *testing.T) {
 	t.Parallel()
 
 	partial := false
-	ruleFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	ruleFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -435,8 +435,8 @@ func TestRunCompatFixture_ConfidencePenaltyForAgentOnlySupport(t *testing.T) {
 			ExpectedBundleHashStable: true,
 		},
 	}
-	agentFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	agentFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: ruleFixture.Input.Scan,
 			Verification: artifactsv2.VerificationSource{
 				ReportSchemaVersion: "1.0.0",
@@ -467,13 +467,13 @@ func TestRunCompatFixture_ConfidencePenaltyForAgentOnlySupport(t *testing.T) {
 		},
 	}
 
-	ruleResult, err := RunCompatFixture(ruleFixture)
+	ruleResult, err := RunFixture(ruleFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(rule): %v", err)
+		t.Fatalf("RunFixture(rule): %v", err)
 	}
-	agentResult, err := RunCompatFixture(agentFixture)
+	agentResult, err := RunFixture(agentFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(agent): %v", err)
+		t.Fatalf("RunFixture(agent): %v", err)
 	}
 
 	ruleConfidence := ruleResult.IssueCandidates[0].Confidence
@@ -486,12 +486,12 @@ func TestRunCompatFixture_ConfidencePenaltyForAgentOnlySupport(t *testing.T) {
 	}
 }
 
-func TestRunCompatFixture_ConfidenceCapForUnknownStatus(t *testing.T) {
+func TestRunFixture_ConfidenceCapForUnknownStatus(t *testing.T) {
 	t.Parallel()
 
 	partial := false
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -530,9 +530,9 @@ func TestRunCompatFixture_ConfidenceCapForUnknownStatus(t *testing.T) {
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if result.IssueCandidates[0].Confidence > 0.55 {
 		t.Fatalf("expected unknown issue confidence to be capped at 0.55, got %f", result.IssueCandidates[0].Confidence)
@@ -542,13 +542,13 @@ func TestRunCompatFixture_ConfidenceCapForUnknownStatus(t *testing.T) {
 	}
 }
 
-func TestRunCompatFixture_ArchitectureRulePromotedToIssueNative(t *testing.T) {
+func TestRunFixture_ArchitectureRulePromotedToIssueNative(t *testing.T) {
 	t.Parallel()
 
 	partial := false
 	issueNativeCount := 1
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -598,9 +598,9 @@ func TestRunCompatFixture_ArchitectureRulePromotedToIssueNative(t *testing.T) {
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if result.Bundle.Trace.MigrationSummary == nil {
 		t.Fatal("expected migration summary")
@@ -613,12 +613,12 @@ func TestRunCompatFixture_ArchitectureRulePromotedToIssueNative(t *testing.T) {
 	}
 }
 
-func TestRunCompatFixture_AggregationNonMergeOnStatusMismatch(t *testing.T) {
+func TestRunFixture_AggregationNonMergeOnStatusMismatch(t *testing.T) {
 	t.Parallel()
 
 	partial := false
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -673,21 +673,21 @@ func TestRunCompatFixture_AggregationNonMergeOnStatusMismatch(t *testing.T) {
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if len(result.Bundle.Report.Issues) != 2 {
 		t.Fatalf("expected 2 issues for status mismatch fixture, got %d", len(result.Bundle.Report.Issues))
 	}
 }
 
-func TestRunCompatFixture_AggregationMergeByNearbyLinesWithoutSymbol(t *testing.T) {
+func TestRunFixture_AggregationMergeByNearbyLinesWithoutSymbol(t *testing.T) {
 	t.Parallel()
 
 	partial := false
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -740,21 +740,21 @@ func TestRunCompatFixture_AggregationMergeByNearbyLinesWithoutSymbol(t *testing.
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if got := result.Bundle.Report.Issues[0].MergeBasis; got != "line_overlap" {
 		t.Fatalf("expected line_overlap merge basis, got %q", got)
 	}
 }
 
-func TestRunCompatFixture_PreservesExplicitEvidenceIDs(t *testing.T) {
+func TestRunFixture_PreservesExplicitEvidenceIDs(t *testing.T) {
 	t.Parallel()
 
 	partial := false
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -795,9 +795,9 @@ func TestRunCompatFixture_PreservesExplicitEvidenceIDs(t *testing.T) {
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if got := result.Bundle.Report.Issues[0].EvidenceIDs; len(got) != 1 || got[0] != "ev-explicit-1" {
 		t.Fatalf("expected explicit evidence id to be preserved, got %#v", got)
@@ -807,12 +807,12 @@ func TestRunCompatFixture_PreservesExplicitEvidenceIDs(t *testing.T) {
 	}
 }
 
-func TestRunCompatFixture_SynthesizesEvidenceAndCrossReferences(t *testing.T) {
+func TestRunFixture_SynthesizesEvidenceAndCrossReferences(t *testing.T) {
 	t.Parallel()
 
 	partial := false
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -851,9 +851,9 @@ func TestRunCompatFixture_SynthesizesEvidenceAndCrossReferences(t *testing.T) {
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if len(result.Bundle.Evidence.Evidence) != 1 {
 		t.Fatalf("expected single synthetic evidence record, got %d", len(result.Bundle.Evidence.Evidence))
@@ -870,10 +870,10 @@ func TestRunCompatFixture_SynthesizesEvidenceAndCrossReferences(t *testing.T) {
 	}
 }
 
-func TestRunCompatFixture_RepeatedBuildPreservesStableIssueAndEvidenceIDs(t *testing.T) {
+func TestRunFixture_RepeatedBuildPreservesStableIssueAndEvidenceIDs(t *testing.T) {
 	t.Parallel()
 
-	input := artifactsv2.CompatBuildInput{
+	input := artifactsv2.BuildInput{
 		Scan: report.ScanReport{
 			ScanSchemaVersion: "1.0.0",
 			RepoPath:          "/tmp/repo",
@@ -903,13 +903,13 @@ func TestRunCompatFixture_RepeatedBuildPreservesStableIssueAndEvidenceIDs(t *tes
 		EngineVersion: "verabase@dev",
 	}
 
-	first, err := artifactsv2.BuildCompatArtifacts(input)
+	first, err := artifactsv2.BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(first): %v", err)
+		t.Fatalf("BuildArtifacts(first): %v", err)
 	}
-	second, err := artifactsv2.BuildCompatArtifacts(input)
+	second, err := artifactsv2.BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(second): %v", err)
+		t.Fatalf("BuildArtifacts(second): %v", err)
 	}
 
 	if len(first.Bundle.Report.Issues) != 1 || len(second.Bundle.Report.Issues) != 1 {
@@ -929,7 +929,7 @@ func TestRunCompatFixture_RepeatedBuildPreservesStableIssueAndEvidenceIDs(t *tes
 	}
 }
 
-func TestRunCompatFixture_ConfidenceBoostForMultiRuleSupport(t *testing.T) {
+func TestRunFixture_ConfidenceBoostForMultiRuleSupport(t *testing.T) {
 	t.Parallel()
 
 	partial := false
@@ -942,8 +942,8 @@ func TestRunCompatFixture_ConfidenceBoostForMultiRuleSupport(t *testing.T) {
 		FileCount:         3,
 		BoundaryMode:      "repo",
 	}
-	singleFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	singleFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: baseScan,
 			Verification: artifactsv2.VerificationSource{
 				ReportSchemaVersion: "1.0.0",
@@ -976,8 +976,8 @@ func TestRunCompatFixture_ConfidenceBoostForMultiRuleSupport(t *testing.T) {
 			ExpectedBundleHashStable: true,
 		},
 	}
-	multiFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	multiFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: baseScan,
 			Verification: artifactsv2.VerificationSource{
 				ReportSchemaVersion: "1.0.0",
@@ -1028,20 +1028,20 @@ func TestRunCompatFixture_ConfidenceBoostForMultiRuleSupport(t *testing.T) {
 		},
 	}
 
-	single, err := RunCompatFixture(singleFixture)
+	single, err := RunFixture(singleFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(single): %v", err)
+		t.Fatalf("RunFixture(single): %v", err)
 	}
-	multi, err := RunCompatFixture(multiFixture)
+	multi, err := RunFixture(multiFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(multi): %v", err)
+		t.Fatalf("RunFixture(multi): %v", err)
 	}
 	if multi.IssueCandidates[0].ConfidenceBreakdown.RuleReliability <= single.IssueCandidates[0].ConfidenceBreakdown.RuleReliability {
 		t.Fatalf("expected multi-rule support boost, got %f vs %f", multi.IssueCandidates[0].ConfidenceBreakdown.RuleReliability, single.IssueCandidates[0].ConfidenceBreakdown.RuleReliability)
 	}
 }
 
-func TestRunCompatFixture_MigrationProgressImprovesConfidenceOrdering(t *testing.T) {
+func TestRunFixture_MigrationProgressImprovesConfidenceOrdering(t *testing.T) {
 	t.Parallel()
 
 	partial := false
@@ -1069,8 +1069,8 @@ func TestRunCompatFixture_MigrationProgressImprovesConfidenceOrdering(t *testing
 		EndLine:    10,
 	}
 
-	issueNativeFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	issueNativeFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: baseScan,
 			Verification: artifactsv2.VerificationSource{
 				ReportSchemaVersion: "1.0.0",
@@ -1100,8 +1100,8 @@ func TestRunCompatFixture_MigrationProgressImprovesConfidenceOrdering(t *testing
 		},
 	}
 
-	seedNativeFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	seedNativeFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: baseScan,
 			Verification: artifactsv2.VerificationSource{
 				ReportSchemaVersion: "1.0.0",
@@ -1131,13 +1131,13 @@ func TestRunCompatFixture_MigrationProgressImprovesConfidenceOrdering(t *testing
 		},
 	}
 
-	issueNativeResult, err := RunCompatFixture(issueNativeFixture)
+	issueNativeResult, err := RunFixture(issueNativeFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(issue-native): %v", err)
+		t.Fatalf("RunFixture(issue-native): %v", err)
 	}
-	seedNativeResult, err := RunCompatFixture(seedNativeFixture)
+	seedNativeResult, err := RunFixture(seedNativeFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(seed-native): %v", err)
+		t.Fatalf("RunFixture(seed-native): %v", err)
 	}
 
 	if issueNativeResult.IssueCandidates[0].Confidence <= seedNativeResult.IssueCandidates[0].Confidence {
@@ -1151,14 +1151,14 @@ func TestRunCompatFixture_MigrationProgressImprovesConfidenceOrdering(t *testing
 	}
 }
 
-func TestRunCompatFixture_ContextSelectionAndPlannedAgentsStayBounded(t *testing.T) {
+func TestRunFixture_ContextSelectionAndPlannedAgentsStayBounded(t *testing.T) {
 	t.Parallel()
 
 	partial := false
 	contextSelectionCount := 3
 	agentCount := 3
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -1173,7 +1173,7 @@ func TestRunCompatFixture_ContextSelectionAndPlannedAgentsStayBounded(t *testing
 				RuleMetadata: map[string]artifactsv2.RuleMetadata{
 					"CTX-TRUST-001": {RuleID: "CTX-TRUST-001", MigrationState: "issue_native", MigrationReason: "trusted static issue semantics"},
 					"CTX-DES-001":   {RuleID: "CTX-DES-001", MigrationState: "seed_native", MigrationReason: "semantic issue seed exists but planned agent support is still required"},
-					"CTX-UNK-001":   {RuleID: "CTX-UNK-001", MigrationState: "finding_bridged", MigrationReason: "unknown path still depends on compatibility finding semantics"},
+					"CTX-UNK-001":   {RuleID: "CTX-UNK-001", MigrationState: "finding_bridged", MigrationReason: "unknown path still depends on finding semantics"},
 				},
 				IssueSeeds: []artifactsv2.IssueSeed{
 					{
@@ -1266,9 +1266,9 @@ func TestRunCompatFixture_ContextSelectionAndPlannedAgentsStayBounded(t *testing
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if len(result.Bundle.Trace.ContextSelections) != 3 {
 		t.Fatalf("expected 3 context selections, got %d", len(result.Bundle.Trace.ContextSelections))
@@ -1319,14 +1319,14 @@ func TestRunCompatFixture_ContextSelectionAndPlannedAgentsStayBounded(t *testing
 	}
 }
 
-func TestRunCompatFixture_BoundedContextSelectionAndPlannedAgents(t *testing.T) {
+func TestRunFixture_BoundedContextSelectionAndPlannedAgents(t *testing.T) {
 	t.Parallel()
 
 	partial := false
 	contextSelectionCount := 3
 	agentCount := 3
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -1403,9 +1403,9 @@ func TestRunCompatFixture_BoundedContextSelectionAndPlannedAgents(t *testing.T) 
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if len(result.Bundle.Trace.ContextSelections) != 3 {
 		t.Fatalf("expected 3 context selections, got %d", len(result.Bundle.Trace.ContextSelections))
@@ -1460,15 +1460,15 @@ func TestRunCompatFixture_BoundedContextSelectionAndPlannedAgents(t *testing.T) 
 	}
 }
 
-func TestRunCompatFixture_CompletedAgentResultFeedsEvidenceAndTrace(t *testing.T) {
+func TestRunFixture_CompletedAgentResultFeedsEvidenceAndTrace(t *testing.T) {
 	t.Parallel()
 
 	partial := false
 	contextSelectionCount := 1
 	agentCount := 1
 
-	baseFixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	baseFixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -1531,9 +1531,9 @@ func TestRunCompatFixture_CompletedAgentResultFeedsEvidenceAndTrace(t *testing.T
 		},
 	}
 
-	initial, err := RunCompatFixture(baseFixture)
+	initial, err := RunFixture(baseFixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(initial): %v", err)
+		t.Fatalf("RunFixture(initial): %v", err)
 	}
 	if len(initial.Bundle.Trace.Agents) != 1 {
 		t.Fatalf("expected 1 planned agent, got %#v", initial.Bundle.Trace.Agents)
@@ -1572,9 +1572,9 @@ func TestRunCompatFixture_CompletedAgentResultFeedsEvidenceAndTrace(t *testing.T
 		}},
 	}}
 
-	result, err := RunCompatFixture(withResult)
+	result, err := RunFixture(withResult)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(withResult): %v", err)
+		t.Fatalf("RunFixture(withResult): %v", err)
 	}
 	if len(result.Bundle.Trace.Agents) != 1 {
 		t.Fatalf("expected 1 agent after overlay, got %#v", result.Bundle.Trace.Agents)
@@ -1619,7 +1619,7 @@ func TestRunCompatFixture_CompletedAgentResultFeedsEvidenceAndTrace(t *testing.T
 	}
 }
 
-func TestRunCompatFixture_FamilyBoundariesConfidenceAndAgentContract(t *testing.T) {
+func TestRunFixture_FamilyBoundariesConfidenceAndAgentContract(t *testing.T) {
 	t.Parallel()
 
 	partial := false
@@ -1629,8 +1629,8 @@ func TestRunCompatFixture_FamilyBoundariesConfidenceAndAgentContract(t *testing.
 	seedNativeCount := 1
 	findingBridgedCount := 1
 
-	fixture := CompatFixture{
-		Input: artifactsv2.CompatBuildInput{
+	fixture := Fixture{
+		Input: artifactsv2.BuildInput{
 			Scan: report.ScanReport{
 				ScanSchemaVersion: "1.0.0",
 				RepoPath:          "/tmp/repo",
@@ -1645,7 +1645,7 @@ func TestRunCompatFixture_FamilyBoundariesConfidenceAndAgentContract(t *testing.
 				RuleMetadata: map[string]artifactsv2.RuleMetadata{
 					"FAM-SEC-001": {RuleID: "FAM-SEC-001", MigrationState: "issue_native", MigrationReason: "native issue semantics"},
 					"FAM-DES-001": {RuleID: "FAM-DES-001", MigrationState: "seed_native", MigrationReason: "deterministic seed boundary remains under review"},
-					"FAM-BUG-001": {RuleID: "FAM-BUG-001", MigrationState: "finding_bridged", MigrationReason: "compatibility finding boundary remains bridged"},
+					"FAM-BUG-001": {RuleID: "FAM-BUG-001", MigrationState: "finding_bridged", MigrationReason: "finding boundary remains bridged"},
 				},
 				IssueSeeds: []artifactsv2.IssueSeed{
 					{
@@ -1723,9 +1723,9 @@ func TestRunCompatFixture_FamilyBoundariesConfidenceAndAgentContract(t *testing.
 		},
 	}
 
-	result, err := RunCompatFixture(fixture)
+	result, err := RunFixture(fixture)
 	if err != nil {
-		t.Fatalf("RunCompatFixture(): %v", err)
+		t.Fatalf("RunFixture(): %v", err)
 	}
 	if len(result.Bundle.Trace.ContextSelections) != 3 {
 		t.Fatalf("expected 3 context selections, got %d", len(result.Bundle.Trace.ContextSelections))

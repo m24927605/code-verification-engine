@@ -283,13 +283,13 @@ func TestBuildIssueSeedsSyntheticEvidenceForFindingWithoutEvidence(t *testing.T)
 		}},
 	}
 
-	result, err := BuildCompatArtifacts(CompatBuildInput{
+	result, err := BuildArtifacts(BuildInput{
 		Scan:          scan,
 		Verification:  verification,
 		EngineVersion: "dev",
 	})
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if len(result.IssueCandidates) != 1 {
 		t.Fatalf("expected 1 issue from synthetic evidence path, got %d", len(result.IssueCandidates))
@@ -434,12 +434,12 @@ func TestValidateClaimsProfileResumeArtifactsRejectsResumeError(t *testing.T) {
 	}
 }
 
-// ---------- builder.go: BuildCompatArtifacts error path ----------
+// ---------- builder.go: BuildArtifacts error path ----------
 
-func TestBuildCompatArtifactsAgentExecutorError(t *testing.T) {
+func TestBuildArtifactsAgentExecutorError(t *testing.T) {
 	t.Parallel()
 
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			RepoName:     "github.com/acme/repo",
 			CommitSHA:    "abc123def456",
@@ -471,9 +471,9 @@ func TestBuildCompatArtifactsAgentExecutorError(t *testing.T) {
 		EngineVersion: "dev",
 	}
 
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")

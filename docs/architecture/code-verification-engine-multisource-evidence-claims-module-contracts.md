@@ -55,7 +55,7 @@ Allowed `role` examples:
 
 ### 4.1 `SourceEvidenceRecord`
 
-This extends the v2 evidence concept with source-class metadata.
+This extends the canonical evidence concept with source-class metadata.
 
 Required fields:
 
@@ -242,7 +242,7 @@ Required synthesis constraints:
 
 ## 10. Artifact Integration Contract
 
-The new contracts must integrate with existing v2 artifacts as follows:
+The new contracts must integrate with existing canonical artifacts as follows:
 
 - `evidence.json`
   - must include multi-source evidence records or references
@@ -269,7 +269,7 @@ The API must not flatten all claims into unqualified marketing statements.
 
 The new claim subsystem must not:
 
-- break current v2 report, evidence, trace, or skills output
+- break current report, evidence, trace, or skills output
 - require README or docs to exist
 - require LLM execution to produce machine-readable claims
 

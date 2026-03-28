@@ -60,7 +60,7 @@ func TestValidateBundleCrossReferences(t *testing.T) {
 	}
 }
 
-func TestBuildCompatArtifactsStableAcrossSeedOrdering(t *testing.T) {
+func TestBuildArtifactsStableAcrossSeedOrdering(t *testing.T) {
 	t.Parallel()
 
 	baseScan := report.ScanReport{
@@ -70,7 +70,7 @@ func TestBuildCompatArtifactsStableAcrossSeedOrdering(t *testing.T) {
 		FileCount:    3,
 		BoundaryMode: "repo",
 	}
-	a := CompatBuildInput{
+	a := BuildInput{
 		Scan: baseScan,
 		Verification: VerificationSource{
 			ReportSchemaVersion: "1.0.0",
@@ -110,13 +110,13 @@ func TestBuildCompatArtifactsStableAcrossSeedOrdering(t *testing.T) {
 	b := a
 	b.Verification.IssueSeeds = []IssueSeed{a.Verification.IssueSeeds[1], a.Verification.IssueSeeds[0]}
 
-	first, err := BuildCompatArtifacts(a)
+	first, err := BuildArtifacts(a)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(first): %v", err)
+		t.Fatalf("BuildArtifacts(first): %v", err)
 	}
-	second, err := BuildCompatArtifacts(b)
+	second, err := BuildArtifacts(b)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(second): %v", err)
+		t.Fatalf("BuildArtifacts(second): %v", err)
 	}
 
 	if len(first.Bundle.Report.Issues) != 1 || len(second.Bundle.Report.Issues) != 1 {
@@ -286,7 +286,7 @@ func testBundle() Bundle {
 			Timestamp:     timestamp,
 			ScanBoundary:  TraceScanBoundary{Mode: "repo", IncludedFiles: 10, ExcludedFiles: 1},
 			ConfidenceCalibration: &ConfidenceCalibration{
-				Version:                 "v2-release-blocking-calibration-1",
+				Version:                 "release-blocking-calibration-1",
 				MachineTrustedThreshold: machineTrustedFinalThreshold,
 				UnknownCap:              unknownFinalCap,
 				AgentOnlyCap:            agentOnlyFinalCap,

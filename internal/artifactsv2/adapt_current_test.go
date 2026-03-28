@@ -8,7 +8,7 @@ import (
 	"github.com/verabase/code-verification-engine/internal/skills"
 )
 
-func TestBuildCompatBundleProducesValidBundle(t *testing.T) {
+func TestBuildBundleProducesValidBundle(t *testing.T) {
 	t.Parallel()
 
 	scan := report.ScanReport{
@@ -63,10 +63,16 @@ func TestBuildCompatBundleProducesValidBundle(t *testing.T) {
 		},
 	}
 
-	bundle := BuildCompatBundle(scan, report.VerificationReport{
-		ReportSchemaVersion: verification.ReportSchemaVersion,
-		Findings:            verification.Findings,
-	}, skillReport, "verabase@dev")
+	result, err := BuildArtifacts(BuildInput{
+		Scan:          scan,
+		Verification:  verification,
+		SkillReport:   skillReport,
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		t.Fatalf("BuildArtifacts(): %v", err)
+	}
+	bundle := result.Bundle
 	if err := ValidateBundle(bundle); err != nil {
 		t.Fatalf("ValidateBundle(): %v", err)
 	}
@@ -84,7 +90,7 @@ func TestBuildCompatBundleProducesValidBundle(t *testing.T) {
 	}
 }
 
-func TestBuildCompatBundleClustersOverlappingFindings(t *testing.T) {
+func TestBuildBundleClustersOverlappingFindings(t *testing.T) {
 	t.Parallel()
 
 	scan := report.ScanReport{
@@ -97,9 +103,7 @@ func TestBuildCompatBundleClustersOverlappingFindings(t *testing.T) {
 		Analyzers:         map[string]string{"typescript": "ok"},
 		BoundaryMode:      "repo",
 	}
-	vr := report.VerificationReport{
-		ReportSchemaVersion: "1.0.0",
-		Findings: []rules.Finding{
+	findings := []rules.Finding{
 			{
 				RuleID:           "QUAL-NULL-001",
 				Status:           rules.StatusFail,
@@ -130,10 +134,21 @@ func TestBuildCompatBundleClustersOverlappingFindings(t *testing.T) {
 					Symbol:    "getUser",
 				}},
 			},
-		},
 	}
+	vr := report.GenerateVerificationReport(report.ReportInput{Findings: findings})
 
-	bundle := BuildCompatBundle(scan, vr, nil, "verabase@dev")
+	result, err := BuildArtifacts(BuildInput{
+		Scan: scan,
+		Verification: VerificationSource{
+			ReportSchemaVersion: vr.ReportSchemaVersion,
+			IssueSeeds:          issueSeedsFromReportIssues(vr.Issues),
+		},
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		t.Fatalf("BuildArtifacts(): %v", err)
+	}
+	bundle := result.Bundle
 	if err := ValidateBundle(bundle); err != nil {
 		t.Fatalf("ValidateBundle(): %v", err)
 	}
@@ -149,7 +164,7 @@ func TestBuildCompatBundleClustersOverlappingFindings(t *testing.T) {
 	}
 }
 
-func TestBuildCompatBundleDoesNotMergeDifferentFiles(t *testing.T) {
+func TestBuildBundleDoesNotMergeDifferentFiles(t *testing.T) {
 	t.Parallel()
 
 	scan := report.ScanReport{
@@ -162,9 +177,7 @@ func TestBuildCompatBundleDoesNotMergeDifferentFiles(t *testing.T) {
 		Analyzers:         map[string]string{"typescript": "ok"},
 		BoundaryMode:      "repo",
 	}
-	vr := report.VerificationReport{
-		ReportSchemaVersion: "1.0.0",
-		Findings: []rules.Finding{
+	findings := []rules.Finding{
 			{
 				RuleID:           "QUAL-NULL-001",
 				Status:           rules.StatusFail,
@@ -195,10 +208,21 @@ func TestBuildCompatBundleDoesNotMergeDifferentFiles(t *testing.T) {
 					Symbol:    "getUser",
 				}},
 			},
-		},
 	}
+	vr := report.GenerateVerificationReport(report.ReportInput{Findings: findings})
 
-	bundle := BuildCompatBundle(scan, vr, nil, "verabase@dev")
+	result, err := BuildArtifacts(BuildInput{
+		Scan: scan,
+		Verification: VerificationSource{
+			ReportSchemaVersion: vr.ReportSchemaVersion,
+			IssueSeeds:          issueSeedsFromReportIssues(vr.Issues),
+		},
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		t.Fatalf("BuildArtifacts(): %v", err)
+	}
+	bundle := result.Bundle
 	if err := ValidateBundle(bundle); err != nil {
 		t.Fatalf("ValidateBundle(): %v", err)
 	}
@@ -207,7 +231,7 @@ func TestBuildCompatBundleDoesNotMergeDifferentFiles(t *testing.T) {
 	}
 }
 
-func TestBuildCompatArtifactsIncludesAgentResultEvidenceAndTrace(t *testing.T) {
+func TestBuildArtifactsIncludesAgentResultEvidenceAndTrace(t *testing.T) {
 	t.Parallel()
 
 	scan := report.ScanReport{
@@ -247,7 +271,7 @@ func TestBuildCompatArtifactsIncludesAgentResultEvidenceAndTrace(t *testing.T) {
 	}
 	candidate := IssueCandidate{ID: compatIssueID(cluster), Category: "security"}
 
-	result, err := BuildCompatArtifacts(CompatBuildInput{
+	result, err := BuildArtifacts(BuildInput{
 		Scan: scan,
 		Verification: VerificationSource{
 			ReportSchemaVersion: "1.0.0",
@@ -275,7 +299,7 @@ func TestBuildCompatArtifactsIncludesAgentResultEvidenceAndTrace(t *testing.T) {
 		EngineVersion: "verabase@dev",
 	})
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if err := ValidateBundle(result.Bundle); err != nil {
 		t.Fatalf("ValidateBundle(): %v", err)
@@ -321,7 +345,7 @@ func TestBuildCompatArtifactsIncludesAgentResultEvidenceAndTrace(t *testing.T) {
 	}
 }
 
-func TestBuildCompatBundleBackfillsSkillEvidenceFromIssueCandidates(t *testing.T) {
+func TestBuildBundleBackfillsSkillEvidenceFromIssueCandidates(t *testing.T) {
 	t.Parallel()
 
 	scan := report.ScanReport{
@@ -370,10 +394,16 @@ func TestBuildCompatBundleBackfillsSkillEvidenceFromIssueCandidates(t *testing.T
 		},
 	}
 
-	bundle := BuildCompatBundle(scan, report.VerificationReport{
-		ReportSchemaVersion: verification.ReportSchemaVersion,
-		Findings:            verification.Findings,
-	}, skillReport, "verabase@dev")
+	result, err := BuildArtifacts(BuildInput{
+		Scan:          scan,
+		Verification:  verification,
+		SkillReport:   skillReport,
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		t.Fatalf("BuildArtifacts(): %v", err)
+	}
+	bundle := result.Bundle
 	if err := ValidateBundle(bundle); err != nil {
 		t.Fatalf("ValidateBundle(): %v", err)
 	}
@@ -385,7 +415,7 @@ func TestBuildCompatBundleBackfillsSkillEvidenceFromIssueCandidates(t *testing.T
 	}
 }
 
-func TestBuildCompatBundleSkipsNonTraceableSkillSignalsInV2SkillsArtifact(t *testing.T) {
+func TestBuildBundleSkipsNonTraceableSkillSignalsInSkillsArtifact(t *testing.T) {
 	t.Parallel()
 
 	scan := report.ScanReport{
@@ -434,19 +464,25 @@ func TestBuildCompatBundleSkipsNonTraceableSkillSignalsInV2SkillsArtifact(t *tes
 		},
 	}
 
-	bundle := BuildCompatBundle(scan, report.VerificationReport{
-		ReportSchemaVersion: verification.ReportSchemaVersion,
-		Findings:            verification.Findings,
-	}, skillReport, "verabase@dev")
+	result, err := BuildArtifacts(BuildInput{
+		Scan:          scan,
+		Verification:  verification,
+		SkillReport:   skillReport,
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		t.Fatalf("BuildArtifacts(): %v", err)
+	}
+	bundle := result.Bundle
 	if err := ValidateBundle(bundle); err != nil {
 		t.Fatalf("ValidateBundle(): %v", err)
 	}
 	if len(bundle.Skills.Skills) != 0 {
-		t.Fatalf("expected non-traceable legacy skill signal to be skipped from v2 skills artifact, got %#v", bundle.Skills.Skills)
+		t.Fatalf("expected non-traceable legacy skill signal to be skipped from skills artifact, got %#v", bundle.Skills.Skills)
 	}
 }
 
-func TestBuildCompatBundleSkipsSkillSignalWhenRuleHasNoAggregatedIssueID(t *testing.T) {
+func TestBuildBundleSkipsSkillSignalWhenRuleHasNoAggregatedIssueID(t *testing.T) {
 	t.Parallel()
 
 	scan := report.ScanReport{
@@ -494,14 +530,20 @@ func TestBuildCompatBundleSkipsSkillSignalWhenRuleHasNoAggregatedIssueID(t *test
 		},
 	}
 
-	bundle := BuildCompatBundle(scan, report.VerificationReport{
-		ReportSchemaVersion: verification.ReportSchemaVersion,
-		Findings:            verification.Findings,
-	}, skillReport, "verabase@dev")
+	result, err := BuildArtifacts(BuildInput{
+		Scan:          scan,
+		Verification:  verification,
+		SkillReport:   skillReport,
+		EngineVersion: "verabase@dev",
+	})
+	if err != nil {
+		t.Fatalf("BuildArtifacts(): %v", err)
+	}
+	bundle := result.Bundle
 	if err := ValidateBundle(bundle); err != nil {
 		t.Fatalf("ValidateBundle(): %v", err)
 	}
 	if len(bundle.Skills.Skills) != 0 {
-		t.Fatalf("expected skill signal without aggregated issue id to be skipped from v2 skills artifact, got %#v", bundle.Skills.Skills)
+		t.Fatalf("expected skill signal without aggregated issue id to be skipped from skills artifact, got %#v", bundle.Skills.Skills)
 	}
 }

@@ -16,7 +16,7 @@ Tail completion is divided into six workstreams:
 2. scenario fixture assertion hardening
 3. config family completion
 4. benchmark expansion
-5. trace and compatibility polish
+5. trace and release polish
 6. final acceptance harness integration
 
 ## 4. Workstream 1: Golden Corpus Completion
@@ -185,7 +185,7 @@ Implementation order must be:
 2. scenario fixture assertion hardening
 3. config family completion
 4. benchmark expansion
-5. trace and compatibility polish
+5. trace and release polish
 6. final acceptance harness integration
 
 This order is mandatory because:

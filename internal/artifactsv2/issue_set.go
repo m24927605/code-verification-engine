@@ -7,7 +7,7 @@ import (
 	"github.com/verabase/code-verification-engine/internal/skills"
 )
 
-// IssueCandidateSet is the canonical deterministic v2 verification product.
+// IssueCandidateSet is the canonical deterministic verification product.
 // It captures the normalized evidence store plus aggregated issue candidates
 // before any report-specific projection is applied.
 type IssueCandidateSet struct {
@@ -29,7 +29,7 @@ type IssueCandidateBuildInput struct {
 }
 
 // BuildIssueCandidateSet constructs the canonical deterministic evidence store
-// and issue candidate set for the v2 verification path.
+// and issue candidate set for the verification path.
 func BuildIssueCandidateSet(input IssueCandidateBuildInput) (*IssueCandidateSet, error) {
 	engineVersion := input.EngineVersion
 	if engineVersion == "" {

@@ -25,7 +25,7 @@ cve verify --repo ~/my-api --mode skill_inference --output ./out
 # Run both verification and skill inference
 cve verify --repo ~/my-api --mode both --output ./out
 
-# Run the local V2 release gate
+# Run the local release gate
 cve release-gate
 ```
 
@@ -45,7 +45,7 @@ cve release-gate
 | `list-profiles`      | List available verification profiles             |
 | `list-claims`        | List available claim sets                        |
 | `list-skill-profiles`| List available skill inference profiles           |
-| `release-gate`       | Run the local V2 release gate                    |
+| `release-gate`       | Run the local release gate                    |
 | `version`            | Print version info                               |
 
 ### `verify` Flags
@@ -110,7 +110,7 @@ In addition to detailed `signals[]`, the engine also emits simplified stack summ
 
 - `skills[]` — inferred non-unsupported skill IDs
 - `languages[]` — detected repository languages
-- `frameworks[]` — compatibility field containing only technologies classified as `framework`
+- `frameworks[]` — preserved field containing only technologies classified as `framework`
 - `technologies[]` — normalized detected stack components with explicit `kind`
 
 ### Skill Profile: `github-engineer-core`
@@ -183,54 +183,30 @@ Current `technologies[].kind` values include:
 
 ## Output Files
 
-`--output` writes the current public artifacts at the root of the output directory and also writes an evidence-first compatibility bundle under `verifiable/`.
-
-### Root Output Directory
+The canonical verification artifacts live under `verifiable/`.
 
 Always written:
 
-| File                  | Description                                 |
-|-----------------------|---------------------------------------------|
-| `scan.json`           | Repository metadata, analyzers, languages    |
-| `accounting.json`     | Per-file analysis accounting                 |
-| `evidence-graph.json` | Evidence relationship graph                  |
-| `verifiable/`         | Evidence-first compatibility artifact bundle |
+| File             | Description                                   |
+|------------------|-----------------------------------------------|
+| `report.json`    | Canonical issue-centric verification report   |
+| `evidence.json`  | Canonical evidence store                      |
+| `skills.json`    | Evidence-derived skill and technology outputs |
+| `trace.json`     | Deterministic derivation and execution trace  |
+| `summary.md`     | Human-readable verification summary           |
+| `signature.json` | Artifact hashes and signature envelope        |
 
 Conditionally written:
 
-| File               | Condition                                | Description                                  |
-|--------------------|------------------------------------------|----------------------------------------------|
-| `report.json`      | `--format=json` or `--format=both`       | Findings, trust summary, capability summary  |
-| `report.md`        | `--format=md` or `--format=both`         | Human-readable report                        |
-| `claims.json`      | `--claims` specified                     | Claim verdicts                               |
-| `skills.json`      | `--mode=skill_inference` or `--mode=both`| Skill signals plus stack summaries           |
-| `review.json`      | `--interpret` enabled                    | Constrained LLM review output                |
-| `interpreted.json` | `--interpret` enabled                    | Full LLM interpretation output               |
-
-### `verifiable/` Bundle
-
-Always written:
-
-| File             | Description                                      |
-|------------------|--------------------------------------------------|
-| `report.json`    | Evidence-backed issue-centric verification report |
-| `evidence.json`  | Canonical evidence store                         |
-| `skills.json`    | Evidence-derived skill and technology outputs    |
-| `trace.json`     | Deterministic derivation and execution trace     |
-| `summary.md`     | Human-readable bundle summary                    |
-| `signature.json` | Artifact hashes and bundle signature envelope    |
-
-Conditionally written:
-
-| File                | Condition                   | Description                         |
-|---------------------|-----------------------------|-------------------------------------|
-| `claims.json`       | Claim projection available  | Multi-source claim projection       |
-| `profile.json`      | Claim projection available  | Capability profile projection       |
-| `resume_input.json` | Claim projection available  | Resume-oriented projection artifact |
+| File                | Condition                  | Description                         |
+|---------------------|----------------------------|-------------------------------------|
+| `claims.json`       | Claim projection available | Multi-source claim projection       |
+| `profile.json`      | Claim projection available | Capability profile projection       |
+| `resume_input.json` | Claim projection available | Resume-oriented projection artifact |
 
 ## Trust Model
 
-Every finding carries a `trust_class`:
+Every canonical issue carries a `trust_class`:
 
 | Trust Class                 | Meaning                                          |
 |-----------------------------|--------------------------------------------------|
@@ -258,9 +234,9 @@ output, err := engine.Verify(ctx, cve.VerifyInput{
 })
 
 // Access typed results
-for _, f := range output.Report.Findings {
+for _, issue := range output.Report.Issues {
     fmt.Printf("[%s] %s: %s (trust: %s)\n",
-        f.RuleID, f.Status, f.Message, f.TrustClass)
+        issue.RuleID, issue.Status, issue.Title, issue.TrustClass)
 }
 ```
 

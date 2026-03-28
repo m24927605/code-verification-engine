@@ -88,7 +88,7 @@ func validBundle(t *testing.T) artifactsv2.Bundle {
 			Timestamp:     "2026-03-27T12:00:00Z",
 			ScanBoundary:  artifactsv2.TraceScanBoundary{Mode: "repo", IncludedFiles: 1},
 			ConfidenceCalibration: &artifactsv2.ConfidenceCalibration{
-				Version:                 "v2-release-blocking-calibration-1",
+				Version:                 "release-blocking-calibration-1",
 				MachineTrustedThreshold: 0.85,
 				UnknownCap:              0.55,
 				AgentOnlyCap:            0.60,

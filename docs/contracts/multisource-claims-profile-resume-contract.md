@@ -10,7 +10,7 @@ It covers:
 - `profile.json`
 - `resume_input.json`
 
-These contracts are intended to support evidence-backed capability profiling and bounded resume synthesis without weakening the existing v2 verification artifacts.
+These contracts are intended to support evidence-backed capability profiling and bounded resume synthesis without weakening the existing verification artifacts.
 
 ## 2. Contract Principles
 
@@ -120,7 +120,7 @@ It answers:
 ### 3.6 Required Semantics
 
 - `confidence` must be normalized to `0..1`
-- `supporting_evidence_ids` must reference evidence in `evidence.json` or source-evidence-integrated records in v2 output
+- `supporting_evidence_ids` must reference evidence in `evidence.json` or source-evidence-integrated records in canonical output
 - `contradictory_evidence_ids` must reference valid evidence IDs
 - `projection_eligible` must be `true` only for claims safe to include in default profile output
 - `README`-only claims must never be emitted as `verified`

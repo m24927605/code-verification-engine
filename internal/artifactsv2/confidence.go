@@ -40,7 +40,7 @@ func currentConfidenceCalibration() *ConfidenceCalibration {
 		baselines[family] = baseline
 	}
 	return &ConfidenceCalibration{
-		Version:                 "v2-release-blocking-calibration-1",
+		Version:                 "release-blocking-calibration-1",
 		MachineTrustedThreshold: machineTrustedFinalThreshold,
 		UnknownCap:              unknownFinalCap,
 		AgentOnlyCap:            agentOnlyFinalCap,

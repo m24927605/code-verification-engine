@@ -644,11 +644,11 @@ func TestBuildContextBundleSpanBudgetExhaustedBreaks(t *testing.T) {
 	}
 }
 
-// -- BuildCompatArtifacts with AgentExecutor that produces error result --
+// -- BuildArtifacts with AgentExecutor that produces error result --
 
-func TestBuildCompatArtifactsAgentExecutorFailedResult(t *testing.T) {
+func TestBuildArtifactsAgentExecutorFailedResult(t *testing.T) {
 	t.Parallel()
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{RepoName: "r", CommitSHA: "abc123def456", ScannedAt: "2026-03-27T12:00:00Z", FileCount: 3, BoundaryMode: "repo"},
 		Verification: VerificationSource{
 			ReportSchemaVersion: "1.0.0",
@@ -657,9 +657,9 @@ func TestBuildCompatArtifactsAgentExecutorFailedResult(t *testing.T) {
 		AgentExecutor: func(task AgentTask) (AgentResult, error) { return AgentResult{Status: "completed"}, nil },
 		EngineVersion: "dev",
 	}
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts: %v", err)
+		t.Fatalf("BuildArtifacts: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected result")

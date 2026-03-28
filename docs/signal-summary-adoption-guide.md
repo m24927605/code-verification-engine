@@ -7,7 +7,7 @@ Standardize how humans and systems consume `code-verification-engine` results af
 This guide exists to prevent a common failure mode:
 
 - the engine now distinguishes actionable failures from informational detections
-- but downstream users continue to read only legacy `summary.fail`
+- but downstream users continue to read only raw `summary.fail`
 
 If that happens, the product keeps behaving as if the calibration work never happened.
 
@@ -15,7 +15,7 @@ If that happens, the product keeps behaving as if the calibration work never hap
 
 Consumers MUST treat `signal_summary` as the primary operational summary.
 
-Consumers MUST treat legacy `summary` as raw status accounting, not as a release decision signal.
+Consumers MUST treat raw `summary` as raw status accounting, not as a release decision signal.
 
 In practice:
 
@@ -36,7 +36,7 @@ Raw rule-status totals:
 
 This remains useful for:
 
-- backward compatibility
+- consumer continuity
 - low-level debugging
 - contract consistency checks
 
@@ -191,14 +191,14 @@ All product surfaces use `signal_summary` as primary.
 
 - raw accounting
 - debugging context
-- schema compatibility
+- schema continuity
 
 ## Phase 3: Legacy De-Emphasis
 
 Once downstream consumers are migrated:
 
-- keep `summary` for compatibility
-- document it as legacy/raw
+- keep `summary` for consumer continuity
+- document it as raw accounting
 - stop using it in product copy, dashboards, and gating rules
 
 ## Recommended Decision Matrix
@@ -282,4 +282,4 @@ Every downstream integration should document:
 1. Update CLI examples to mention `signal_summary`.
 2. Update any CI scripts to gate on `actionable_fail`.
 3. Update dashboards to split fail counts into calibrated categories.
-4. Mark `summary.fail` as raw/legacy in API docs and examples.
+4. Mark `summary.fail` as raw accounting in API docs and examples.

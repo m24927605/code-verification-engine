@@ -2,7 +2,7 @@ package acceptance
 
 import "github.com/verabase/code-verification-engine/internal/artifactsv2"
 
-// FixtureManifest defines the deterministic expectations for a v2 acceptance fixture.
+// FixtureManifest defines the deterministic expectations for an acceptance fixture.
 // It is intentionally artifact-focused so the same contract can back local tests,
 // CI regression suites, and future fixture runners.
 type FixtureManifest struct {
@@ -56,9 +56,9 @@ type PlannedAgentConstraint struct {
 	OutputEvidenceIDs []string `json:"output_evidence_ids,omitempty"`
 }
 
-// CompatFixture binds a deterministic builder input to its acceptance manifest.
-// This is the minimal executable fixture shape for the current v2 migration path.
-type CompatFixture struct {
-	Input    artifactsv2.CompatBuildInput
+// Fixture binds a deterministic builder input to its acceptance manifest.
+// This is the minimal executable fixture shape for the canonical artifact path.
+type Fixture struct {
+	Input    artifactsv2.BuildInput
 	Manifest FixtureManifest
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/verabase/code-verification-engine/internal/scope"
 )
 
-// SignalClass represents the operational significance of a finding.
+// SignalClass represents the operational significance of an issue or finding.
 type SignalClass string
 
 const (
@@ -18,7 +18,7 @@ const (
 	SignalPass                    SignalClass = "pass"
 )
 
-// SignalSummary counts findings by their operational significance.
+// SignalSummary counts issues by their operational significance.
 type SignalSummary struct {
 	ActionableFail         int `json:"actionable_fail"`
 	AdvisoryFail           int `json:"advisory_fail"`
@@ -26,36 +26,57 @@ type SignalSummary struct {
 	Unknown                int `json:"unknown"`
 }
 
-// ClassifySignal determines the signal class of a finding based on its
-// rule ID, rule metadata, and evidence scope.
+// ClassifyIssueSignal determines the signal class of an issue based on its
+// rule ID, category, and evidence scope.
+func ClassifyIssueSignal(issue Issue, metadata map[string]rules.Rule) SignalClass {
+	evidence := make([]rules.Evidence, 0, len(issue.Evidence))
+	for _, ev := range issue.Evidence {
+		evidence = append(evidence, rules.Evidence{
+			ID:        ev.ID,
+			File:      ev.File,
+			LineStart: ev.LineStart,
+			LineEnd:   ev.LineEnd,
+			Symbol:    ev.Symbol,
+		})
+	}
+	return classifySignal(issue.RuleID, issueStatusToRuleStatus(issue.Status), evidence, issue.Category, metadata)
+}
+
+// ClassifySignal preserves the historical finding-centric helper during cutover.
 func ClassifySignal(f rules.Finding, metadata map[string]rules.Rule) SignalClass {
-	// Non-fail/non-unknown findings are just pass
-	if f.Status == rules.StatusUnknown {
+	return classifySignal(f.RuleID, f.Status, f.Evidence, "", metadata)
+}
+
+func classifySignal(ruleID string, status rules.Status, evidence []rules.Evidence, category string, metadata map[string]rules.Rule) SignalClass {
+	if status == rules.StatusUnknown {
 		return SignalUnknown
 	}
-	if f.Status != rules.StatusFail {
+	if status != rules.StatusFail {
 		return SignalPass
 	}
 
 	// GOF-* findings are always informational detection
-	if IsGOFRule(f.RuleID) {
+	if IsGOFRule(ruleID) {
 		return SignalInformationalDetection
 	}
 
 	// Test-only evidence: if ALL evidence is from test/fixture scope,
 	// downgrade to advisory
-	if len(f.Evidence) > 0 && allEvidenceFromTestScope(f.Evidence) {
+	if len(evidence) > 0 && allEvidenceFromTestScope(evidence) {
 		return SignalAdvisoryFail
 	}
 
-	rule := metadata[f.RuleID]
-	cat := rules.CanonicalIssueCategory(rule, f.RuleID)
+	rule := metadata[ruleID]
+	cat := category
+	if strings.TrimSpace(cat) == "" {
+		cat = rules.CanonicalIssueCategory(rule, ruleID)
+	}
 	switch cat {
 	case "security":
 		return SignalActionableFail
 	case "architecture":
 		// Architecture rules with high-value targets are actionable
-		if isActionableArchRule(f.RuleID) {
+		if isActionableArchRule(ruleID) {
 			return SignalActionableFail
 		}
 		return SignalAdvisoryFail
@@ -69,6 +90,17 @@ func ClassifySignal(f rules.Finding, metadata map[string]rules.Rule) SignalClass
 		return SignalAdvisoryFail
 	default:
 		return SignalAdvisoryFail
+	}
+}
+
+func issueStatusToRuleStatus(status string) rules.Status {
+	switch status {
+	case "resolved", "pass":
+		return rules.StatusPass
+	case "unknown":
+		return rules.StatusUnknown
+	default:
+		return rules.StatusFail
 	}
 }
 
@@ -102,7 +134,25 @@ func allEvidenceFromTestScope(evidence []rules.Evidence) bool {
 	return true
 }
 
-// ComputeSignalSummary computes the signal summary from a list of findings.
+// ComputeIssueSignalSummary computes the signal summary from canonical issues.
+func ComputeIssueSignalSummary(issues []Issue, metadata map[string]rules.Rule) SignalSummary {
+	var ss SignalSummary
+	for _, issue := range issues {
+		switch ClassifyIssueSignal(issue, metadata) {
+		case SignalActionableFail:
+			ss.ActionableFail++
+		case SignalAdvisoryFail:
+			ss.AdvisoryFail++
+		case SignalInformationalDetection:
+			ss.InformationalDetection++
+		case SignalUnknown:
+			ss.Unknown++
+		}
+	}
+	return ss
+}
+
+// ComputeSignalSummary preserves the historical finding-centric helper during cutover.
 func ComputeSignalSummary(findings []rules.Finding, metadata map[string]rules.Rule) SignalSummary {
 	var ss SignalSummary
 	for _, f := range findings {

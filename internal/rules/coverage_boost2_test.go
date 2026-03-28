@@ -162,7 +162,7 @@ func TestRuleMigrationAuditForRule_AllFallbacks(t *testing.T) {
 			"fallback legacy_only for unknown matcher",
 			Rule{ID: "CUSTOM-003", MatcherClass: ""},
 			MigrationLegacyOnly,
-			"no native v2 migration audit recorded",
+			"no native issue migration audit recorded",
 		},
 	}
 

@@ -12,7 +12,7 @@ This document covers:
 2. acceptance-fixture assertion hardening
 3. config claim family completion
 4. benchmark corpus expansion
-5. trace and compatibility polish
+5. trace and release polish
 6. final scenario acceptance harness integration
 
 ## 2. Design Constraints
@@ -33,7 +33,7 @@ The current implementation is functional and test-green, but it still has three 
 
 1. some fixture and benchmark corpora are present only as minimal deterministic skeletons
 2. some migrated families are present as conservative groundwork rather than saturated proof-grade families
-3. trace and compatibility metadata are sufficient for current use, but not yet rich enough for final release-grade audits
+3. trace and release metadata are sufficient for current use, but not yet rich enough for final release-grade audits
 
 This creates a release risk:
 

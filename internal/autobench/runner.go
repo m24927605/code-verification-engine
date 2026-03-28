@@ -172,7 +172,7 @@ func runCase(ctx context.Context, cfg RunConfig, manifest *DatasetManifest, suit
 		Progress:  progress,
 	})
 
-	adjudication := buildAdjudication(manifest, suite, c, expected, engineResult.Report.Findings)
+	adjudication := buildAdjudication(manifest, suite, c, expected, engineResult.Findings)
 	caseResult := CaseRunResult{
 		ID:                   c.ID,
 		RepoPath:             c.RepoPath,
@@ -180,7 +180,7 @@ func runCase(ctx context.Context, cfg RunConfig, manifest *DatasetManifest, suit
 		CaseType:             c.CaseType,
 		ExitCode:             engineResult.ExitCode,
 		OutputDir:            caseOutputDir,
-		ActualFindings:       len(engineResult.Report.Findings),
+		ActualFindings:       len(engineResult.Findings),
 		BlockingDiscrepancies: adjudication.Summary.Blocking,
 		AdvisoryDiscrepancies: adjudication.Summary.Advisory,
 		Adjudication:         adjudication,

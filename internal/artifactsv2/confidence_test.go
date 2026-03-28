@@ -157,10 +157,10 @@ func TestCurrentConfidenceCalibrationCoversAllReleaseBlockingFamilies(t *testing
 	}
 }
 
-func TestBuildCompatArtifactsSetsComputedConfidenceBreakdown(t *testing.T) {
+func TestBuildArtifactsSetsComputedConfidenceBreakdown(t *testing.T) {
 	t.Parallel()
 
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{
 			RepoName:     "github.com/acme/repo",
 			CommitSHA:    "abc123",
@@ -189,9 +189,9 @@ func TestBuildCompatArtifactsSetsComputedConfidenceBreakdown(t *testing.T) {
 		EngineVersion: "verabase@dev",
 	}
 
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts(): %v", err)
+		t.Fatalf("BuildArtifacts(): %v", err)
 	}
 	if len(result.IssueCandidates) != 1 {
 		t.Fatalf("expected 1 issue candidate, got %d", len(result.IssueCandidates))

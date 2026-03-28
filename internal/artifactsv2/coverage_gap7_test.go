@@ -446,11 +446,11 @@ func TestValidateClaimsProfileResumeRefIntegrityFail(t *testing.T) {
 	}
 }
 
-// -- BuildCompatArtifacts: no agent executor, no agent results --
+// -- BuildArtifacts: no agent executor, no agent results --
 
-func TestBuildCompatArtifactsNoExecutorNoResults(t *testing.T) {
+func TestBuildArtifactsNoExecutorNoResults(t *testing.T) {
 	t.Parallel()
-	input := CompatBuildInput{
+	input := BuildInput{
 		Scan: report.ScanReport{RepoName: "r", CommitSHA: "abc123def456", ScannedAt: "2026-03-27T12:00:00Z", FileCount: 3, BoundaryMode: "repo"},
 		Verification: VerificationSource{
 			ReportSchemaVersion: "1.0.0",
@@ -458,9 +458,9 @@ func TestBuildCompatArtifactsNoExecutorNoResults(t *testing.T) {
 		},
 		EngineVersion: "dev",
 	}
-	result, err := BuildCompatArtifacts(input)
+	result, err := BuildArtifacts(input)
 	if err != nil {
-		t.Fatalf("BuildCompatArtifacts: %v", err)
+		t.Fatalf("BuildArtifacts: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected result")

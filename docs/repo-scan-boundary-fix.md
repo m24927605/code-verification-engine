@@ -87,7 +87,7 @@ Recommended meaning:
 - `ScanSubdir`: relative path from repo root to scan root, `""` for full repo
 - `BoundaryMode`: `repo` or `subdir`
 
-Keep existing fields if needed for backward compatibility, but do not overload them.
+Keep existing fields if consumers still need them, but do not overload them.
 
 ## Loader Fix Design
 

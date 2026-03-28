@@ -7,8 +7,8 @@ import (
 )
 
 // VerificationSource is the internal deterministic verification source contract
-// for the v2 artifact builder. It is intentionally closer to engine execution
-// outputs than to legacy report projection.
+// for the artifact builder. It is intentionally closer to engine execution
+// outputs than to report projection.
 type VerificationSource struct {
 	ReportSchemaVersion string
 	Findings            []rules.Finding
@@ -82,7 +82,7 @@ func (s VerificationSource) Clone() VerificationSource {
 }
 
 // AgentResult is the deterministic normalized agent execution output contract
-// accepted by the v2 artifact builder. It allows future agent runtimes to feed
+// accepted by the artifact builder. It allows future agent runtimes to feed
 // evidence into the same evidence-first pipeline without bypassing validation.
 type AgentResult struct {
 	TaskID             string
@@ -116,7 +116,7 @@ type AgentConstraints struct {
 // AgentExecutor executes a bounded agent task and returns a normalized result.
 type AgentExecutor func(task AgentTask) (AgentResult, error)
 
-// RuleMetadata is the normalized rule-definition subset needed by the v2
+// RuleMetadata is the normalized rule-definition subset needed by the
 // verification path to form issue seeds without heuristic backfilling.
 type RuleMetadata struct {
 	RuleID          string
@@ -159,7 +159,7 @@ func IssueSeedsFromFindings(findings []rules.Finding) []IssueSeed {
 	return IssueSeedsFromFindingsWithMetadata(findings, nil)
 }
 
-// IssueSeedsFromRuleSeeds bridges native rules-layer seeds into the v2 artifact
+// IssueSeedsFromRuleSeeds bridges native rules-layer seeds into the artifact
 // source contract without re-deriving them from findings.
 func IssueSeedsFromRuleSeeds(seeds []rules.IssueSeed) []IssueSeed {
 	out := make([]IssueSeed, 0, len(seeds))

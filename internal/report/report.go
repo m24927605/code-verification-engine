@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
-
 
 	"github.com/verabase/code-verification-engine/internal/rules"
 	"github.com/verabase/code-verification-engine/internal/schema"
@@ -27,30 +27,52 @@ type ScanReport struct {
 	Analyzers         map[string]string `json:"analyzers"`
 	Errors            []string          `json:"errors"`
 	Profile           string            `json:"profile"`
-	// Scan boundary metadata
-	SourceRepoRoot string `json:"source_repo_root,omitempty"`
-	RequestedPath  string `json:"requested_path,omitempty"`
-	ScanSubdir     string `json:"scan_subdir,omitempty"`
-	BoundaryMode   string `json:"boundary_mode,omitempty"`
+	SourceRepoRoot    string            `json:"source_repo_root,omitempty"`
+	RequestedPath     string            `json:"requested_path,omitempty"`
+	ScanSubdir        string            `json:"scan_subdir,omitempty"`
+	BoundaryMode      string            `json:"boundary_mode,omitempty"`
 }
 
-// CapabilitySummary counts findings by capability support level and
-// flags runtime degradation. Consumers can use this to understand
-// how many findings are fully backed by analyzer capability.
 type CapabilitySummary struct {
 	FullySupported int  `json:"fully_supported"`
 	Partial        int  `json:"partial"`
 	Unsupported    int  `json:"unsupported"`
-	Degraded       bool `json:"degraded"` // true if any runtime degradation occurred
+	Degraded       bool `json:"degraded"`
 }
 
-// FactQualitySummary counts findings by their verdict basis,
-// indicating how many findings are backed by each evidence tier.
 type FactQualitySummary struct {
 	ProofBacked      int `json:"proof_backed"`
 	StructuralBacked int `json:"structural_backed"`
 	HeuristicBacked  int `json:"heuristic_backed"`
 	RuntimeRequired  int `json:"runtime_required"`
+}
+
+// IssueEvidence is the report-level issue evidence projection.
+type IssueEvidence struct {
+	ID        string `json:"evidence_id,omitempty"`
+	File      string `json:"file"`
+	LineStart int    `json:"line_start"`
+	LineEnd   int    `json:"line_end"`
+	Symbol    string `json:"symbol,omitempty"`
+}
+
+// Issue is the canonical report.json issue representation.
+type Issue struct {
+	ID             string          `json:"id,omitempty"`
+	RuleID         string          `json:"rule_id,omitempty"`
+	RuleIDs        []string        `json:"rule_ids,omitempty"`
+	Title          string          `json:"title"`
+	Category       string          `json:"category"`
+	Severity       string          `json:"severity"`
+	Status         string          `json:"status"`
+	Confidence     string          `json:"confidence,omitempty"`
+	TrustClass     string          `json:"trust_class,omitempty"`
+	Capability     string          `json:"capability,omitempty"`
+	SignalClass    string          `json:"signal_class,omitempty"`
+	FactQuality    string          `json:"fact_quality,omitempty"`
+	EvidenceIDs    []string        `json:"evidence_ids,omitempty"`
+	Evidence       []IssueEvidence `json:"evidence,omitempty"`
+	UnknownReasons []string        `json:"unknown_reasons,omitempty"`
 }
 
 // VerificationReport represents report.json content.
@@ -60,57 +82,52 @@ type VerificationReport struct {
 	Summary             Summary             `json:"summary"`
 	TrustSummary        TrustSummary        `json:"trust_summary"`
 	CapabilitySummary   CapabilitySummary   `json:"capability_summary"`
-	SignalSummary       SignalSummary        `json:"signal_summary"`
+	SignalSummary       SignalSummary       `json:"signal_summary"`
 	FactQualitySummary  FactQualitySummary  `json:"fact_quality_summary"`
-	Findings            []rules.Finding     `json:"findings"`
+	Issues              []Issue             `json:"issues"`
 	SkippedRules        []rules.SkippedRule `json:"skipped_rules,omitempty"`
 	Errors              []string            `json:"errors,omitempty"`
 }
 
-// Summary holds pass/fail/unknown counts.
 type Summary struct {
 	Pass    int `json:"pass"`
 	Fail    int `json:"fail"`
 	Unknown int `json:"unknown"`
 }
 
-// TrustSummary counts findings by trust class.
 type TrustSummary struct {
 	MachineTrusted         int `json:"machine_trusted"`
 	Advisory               int `json:"advisory"`
 	HumanOrRuntimeRequired int `json:"human_or_runtime_required"`
 }
 
-// ScanInput holds the data needed to generate a scan report.
 type ScanInput struct {
-	RepoPath  string
-	RepoName  string
-	Ref       string
-	CommitSHA string
-	Languages []string
-	FileCount int
-	Partial   bool
-	Analyzers map[string]string
-	Errors    []string
-	Profile   string
-	// Scan boundary
+	RepoPath       string
+	RepoName       string
+	Ref            string
+	CommitSHA      string
+	Languages      []string
+	FileCount      int
+	Partial        bool
+	Analyzers      map[string]string
+	Errors         []string
+	Profile        string
 	SourceRepoRoot string
 	RequestedPath  string
 	ScanSubdir     string
 	BoundaryMode   string
 }
 
-// ReportInput holds the data needed to generate verification reports.
 type ReportInput struct {
 	Partial      bool
+	Issues       []Issue
 	Findings     []rules.Finding
 	RuleMetadata map[string]rules.Rule
 	SkippedRules []rules.SkippedRule
 	Errors       []string
-	Degraded     bool // true if any analyzer runtime was degraded
+	Degraded     bool
 }
 
-// GenerateScanReport creates a ScanReport from input data.
 func GenerateScanReport(input ScanInput) ScanReport {
 	return ScanReport{
 		ScanSchemaVersion: schema.ScanSchemaVersion,
@@ -132,71 +149,63 @@ func GenerateScanReport(input ScanInput) ScanReport {
 	}
 }
 
-// GenerateVerificationReport creates a VerificationReport from input data.
 func GenerateVerificationReport(input ReportInput) VerificationReport {
+	issues := append([]Issue(nil), input.Issues...)
+	if len(issues) == 0 {
+		issues = deriveIssuesFromFindings(input.Findings, input.RuleMetadata)
+	}
+
 	summary := Summary{}
 	trustSummary := TrustSummary{}
-	capSummary := CapabilitySummary{
-		Degraded: input.Degraded,
-	}
-	for _, f := range input.Findings {
-		switch f.Status {
-		case rules.StatusPass:
+	capSummary := CapabilitySummary{Degraded: input.Degraded}
+	signalSummary := ComputeIssueSignalSummary(issues, input.RuleMetadata)
+	var fqSummary FactQualitySummary
+
+	for _, issue := range issues {
+		switch issue.Status {
+		case "resolved", "pass":
 			summary.Pass++
-		case rules.StatusFail:
-			summary.Fail++
-		case rules.StatusUnknown:
+		case "unknown":
 			summary.Unknown++
+		default:
+			summary.Fail++
 		}
-		switch f.TrustClass {
-		case rules.TrustMachineTrusted:
+
+		switch issue.TrustClass {
+		case string(rules.TrustMachineTrusted):
 			trustSummary.MachineTrusted++
-		case rules.TrustAdvisory:
+		case string(rules.TrustAdvisory):
 			trustSummary.Advisory++
-		case rules.TrustHumanOrRuntimeRequired:
+		case string(rules.TrustHumanOrRuntimeRequired):
 			trustSummary.HumanOrRuntimeRequired++
 		}
 
-		// CapabilitySummary: classify based on actual capability signals,
-		// not trust class. A finding's unknown_reasons tell us whether it
-		// was capability-limited, and the status tells us if the rule ran.
-		capLevel := classifyFindingCapability(f)
-		switch capLevel {
-		case "fully_supported":
-			capSummary.FullySupported++
-		case "partial":
-			capSummary.Partial++
+		switch issue.Capability {
 		case "unsupported":
 			capSummary.Unsupported++
+		case "partial":
+			capSummary.Partial++
+		default:
+			capSummary.FullySupported++
 		}
-	}
-	// Skipped rules: only count those that were skipped for capability reasons
-	// (not "no matching languages"). Capability-unsupported rules already
-	// produce an unknown finding WITH UnknownCapabilityUnsupported, which is
-	// counted above. So we must NOT double-count them here.
-	// Only count skipped rules that have NO corresponding finding.
-	findingRuleIDs := make(map[string]bool, len(input.Findings))
-	for _, f := range input.Findings {
-		findingRuleIDs[f.RuleID] = true
-	}
-	for _, sr := range input.SkippedRules {
-		if !findingRuleIDs[sr.RuleID] && strings.Contains(sr.Reason, "capability_unsupported") {
-			capSummary.Unsupported++
-		}
-	}
-	signalSummary := ComputeSignalSummary(input.Findings, input.RuleMetadata)
 
-	var fqSummary FactQualitySummary
-	for _, f := range input.Findings {
-		switch f.VerdictBasis {
+		switch issue.FactQuality {
 		case "proof":
 			fqSummary.ProofBacked++
-		case "structural_binding":
+		case "structural":
 			fqSummary.StructuralBacked++
-		case "heuristic_inference":
-			fqSummary.HeuristicBacked++
 		case "runtime_required":
 			fqSummary.RuntimeRequired++
+		default:
+			if issue.FactQuality != "" {
+				fqSummary.HeuristicBacked++
+			}
+		}
+	}
+
+	for _, sr := range input.SkippedRules {
+		if strings.Contains(sr.Reason, "capability_unsupported") && !issuesContainRuleID(issues, sr.RuleID) {
+			capSummary.Unsupported++
 		}
 	}
 
@@ -208,17 +217,83 @@ func GenerateVerificationReport(input ReportInput) VerificationReport {
 		CapabilitySummary:   capSummary,
 		SignalSummary:       signalSummary,
 		FactQualitySummary:  fqSummary,
-		Findings:            input.Findings,
+		Issues:              issues,
 		SkippedRules:        input.SkippedRules,
 		Errors:              input.Errors,
 	}
 }
 
-// classifyFindingCapability determines the capability level of a finding based
-// on its unknown_reasons, not its trust_class. This correctly distinguishes:
-//   - "fully_supported": rule ran with full capability (no capability annotations)
-//   - "partial": rule ran but with partial capability (has capability_partial reason)
-//   - "unsupported": rule could not run due to capability gap (has capability_unsupported reason)
+func deriveIssuesFromFindings(findings []rules.Finding, metadata map[string]rules.Rule) []Issue {
+	out := make([]Issue, 0, len(findings))
+	for _, finding := range findings {
+		rule := metadata[finding.RuleID]
+		evIDs := make([]string, 0, len(finding.Evidence))
+		evidence := make([]IssueEvidence, 0, len(finding.Evidence))
+		for _, ev := range finding.Evidence {
+			id := ev.ID
+			if id == "" {
+				id = rules.EvidenceID(ev)
+			}
+			evIDs = append(evIDs, id)
+			evidence = append(evidence, IssueEvidence{
+				ID:        id,
+				File:      ev.File,
+				LineStart: ev.LineStart,
+				LineEnd:   ev.LineEnd,
+				Symbol:    ev.Symbol,
+			})
+		}
+		category := rules.CanonicalIssueCategory(rule, finding.RuleID)
+		out = append(out, Issue{
+			ID:             finding.RuleID,
+			RuleID:         finding.RuleID,
+			RuleIDs:        []string{finding.RuleID},
+			Title:          rules.CanonicalIssueTitle(rule, finding.Message),
+			Category:       category,
+			Severity:       rules.CanonicalIssueSeverity(rule, finding.TrustClass, finding.Status),
+			Status:         issueStatusFromFinding(finding.Status),
+			Confidence:     string(finding.Confidence),
+			TrustClass:     string(finding.TrustClass),
+			Capability:     classifyFindingCapability(finding),
+			SignalClass:    string(ClassifySignal(finding, metadata)),
+			FactQuality:    normalizeFactQuality(finding.VerdictBasis, finding.FactQualityFloor),
+			EvidenceIDs:    dedupeStrings(evIDs),
+			Evidence:       evidence,
+			UnknownReasons: append([]string(nil), finding.UnknownReasons...),
+		})
+	}
+	return out
+}
+
+func dedupeStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func issuesContainRuleID(issues []Issue, ruleID string) bool {
+	for _, issue := range issues {
+		if issue.RuleID == ruleID || slices.Contains(issue.RuleIDs, ruleID) {
+			return true
+		}
+	}
+	return false
+}
+
 func classifyFindingCapability(f rules.Finding) string {
 	for _, reason := range f.UnknownReasons {
 		if reason == rules.UnknownCapabilityUnsupported {
@@ -236,7 +311,36 @@ func classifyFindingCapability(f rules.Finding) string {
 	return "fully_supported"
 }
 
-// GenerateMarkdown creates a human-readable markdown report.
+func normalizeFactQuality(verdictBasis, factQualityFloor string) string {
+	switch verdictBasis {
+	case "proof", "structural_binding", "heuristic_inference", "runtime_required":
+		if verdictBasis == "structural_binding" {
+			return "structural"
+		}
+		if verdictBasis == "heuristic_inference" {
+			return "heuristic"
+		}
+		return verdictBasis
+	}
+	switch factQualityFloor {
+	case "proof", "structural", "heuristic", "runtime_required":
+		return factQualityFloor
+	default:
+		return "heuristic"
+	}
+}
+
+func issueStatusFromFinding(status rules.Status) string {
+	switch status {
+	case rules.StatusPass:
+		return "resolved"
+	case rules.StatusUnknown:
+		return "unknown"
+	default:
+		return "open"
+	}
+}
+
 func GenerateMarkdown(scan ScanReport, vr VerificationReport) string {
 	var b strings.Builder
 	b.WriteString("# Code Verification Report\n\n")
@@ -254,7 +358,7 @@ func GenerateMarkdown(scan ScanReport, vr VerificationReport) string {
 	b.WriteString(fmt.Sprintf("- Informational Detections: %d\n", vr.SignalSummary.InformationalDetection))
 	b.WriteString(fmt.Sprintf("- Pass: %d\n", vr.Summary.Pass))
 	b.WriteString(fmt.Sprintf("- Unknown: %d\n", vr.SignalSummary.Unknown))
-	b.WriteString(fmt.Sprintf("\n> Total findings: %d (pass=%d fail=%d unknown=%d)\n",
+	b.WriteString(fmt.Sprintf("\n> Total issues: %d (pass=%d fail=%d unknown=%d)\n",
 		vr.Summary.Pass+vr.Summary.Fail+vr.Summary.Unknown,
 		vr.Summary.Pass, vr.Summary.Fail, vr.Summary.Unknown))
 	b.WriteString("\n## Trust Summary\n")
@@ -266,7 +370,7 @@ func GenerateMarkdown(scan ScanReport, vr VerificationReport) string {
 	b.WriteString(fmt.Sprintf("- Partial: %d\n", vr.CapabilitySummary.Partial))
 	b.WriteString(fmt.Sprintf("- Unsupported: %d\n", vr.CapabilitySummary.Unsupported))
 	if vr.CapabilitySummary.Degraded {
-		b.WriteString("- **Degraded**: Runtime degradation detected; some findings may have reduced accuracy\n")
+		b.WriteString("- **Degraded**: Runtime degradation detected; some issues may have reduced accuracy\n")
 	}
 	b.WriteString("\n## Verdict Basis\n")
 	b.WriteString(fmt.Sprintf("- Proof-backed: %d\n", vr.FactQualitySummary.ProofBacked))
@@ -274,39 +378,37 @@ func GenerateMarkdown(scan ScanReport, vr VerificationReport) string {
 	b.WriteString(fmt.Sprintf("- Heuristic: %d\n", vr.FactQualitySummary.HeuristicBacked))
 	b.WriteString(fmt.Sprintf("- Runtime Required: %d\n", vr.FactQualitySummary.RuntimeRequired))
 
-	// Trust warnings
 	if vr.TrustSummary.Advisory > 0 || vr.TrustSummary.HumanOrRuntimeRequired > 0 {
 		b.WriteString("\n## Trust Warnings\n")
 		if vr.TrustSummary.Advisory > 0 {
-			b.WriteString(fmt.Sprintf("- **Advisory findings present (%d)**: These findings use heuristic analysis and should NOT be treated as authoritative. Manual review is recommended before acting on them.\n", vr.TrustSummary.Advisory))
+			b.WriteString(fmt.Sprintf("- **Advisory issues present (%d)**: These issues use heuristic analysis and should NOT be treated as authoritative. Manual review is recommended before acting on them.\n", vr.TrustSummary.Advisory))
 		}
 		if vr.TrustSummary.HumanOrRuntimeRequired > 0 {
-			b.WriteString(fmt.Sprintf("- **Human/runtime review required (%d)**: These findings cannot be resolved by static analysis alone. They require human judgment or runtime testing to validate.\n", vr.TrustSummary.HumanOrRuntimeRequired))
+			b.WriteString(fmt.Sprintf("- **Human/runtime review required (%d)**: These issues cannot be resolved by static analysis alone. They require human judgment or runtime testing to validate.\n", vr.TrustSummary.HumanOrRuntimeRequired))
 		}
 	}
 	if vr.CapabilitySummary.Degraded {
-		b.WriteString("\n> **Note**: Analysis was performed in a degraded mode. Some analyzers may not have had full runtime support. Findings from affected languages may have lower accuracy than normal.\n")
+		b.WriteString("\n> **Note**: Analysis was performed in a degraded mode. Some analyzers may not have had full runtime support. Issues from affected languages may have lower accuracy than normal.\n")
 	}
-	// Separate GOF (pattern detection) findings from primary findings
-	var primaryFindings, gofFindings []rules.Finding
-	for _, f := range vr.Findings {
-		if IsGOFRule(f.RuleID) {
-			gofFindings = append(gofFindings, f)
-		} else {
-			primaryFindings = append(primaryFindings, f)
+
+	var primaryIssues, gofIssues []Issue
+	for _, issue := range vr.Issues {
+		if IsGOFRule(issue.RuleID) {
+			gofIssues = append(gofIssues, issue)
+			continue
 		}
+		primaryIssues = append(primaryIssues, issue)
 	}
 
-	b.WriteString("\n## Findings\n")
-	for _, f := range primaryFindings {
-		writeFindingMarkdown(&b, f)
+	b.WriteString("\n## Issues\n")
+	for _, issue := range primaryIssues {
+		writeIssueMarkdown(&b, issue)
 	}
-
-	if len(gofFindings) > 0 {
+	if len(gofIssues) > 0 {
 		b.WriteString("\n## Pattern Detections\n")
 		b.WriteString("\n> GoF pattern detections are informational and do not count toward actionable failure totals.\n")
-		for _, f := range gofFindings {
-			writeFindingMarkdown(&b, f)
+		for _, issue := range gofIssues {
+			writeIssueMarkdown(&b, issue)
 		}
 	}
 	if len(vr.SkippedRules) > 0 {
@@ -318,17 +420,31 @@ func GenerateMarkdown(scan ScanReport, vr VerificationReport) string {
 	return b.String()
 }
 
-// writeFindingMarkdown writes a single finding in markdown format.
-func writeFindingMarkdown(b *strings.Builder, f rules.Finding) {
-	b.WriteString(fmt.Sprintf("\n### %s %s\n", f.RuleID, f.Message))
-	b.WriteString(fmt.Sprintf("- Status: %s\n", f.Status))
-	b.WriteString(fmt.Sprintf("- Trust Class: %s\n", f.TrustClass))
-	b.WriteString(fmt.Sprintf("- Confidence: %s\n", f.Confidence))
-	b.WriteString(fmt.Sprintf("- Verification Level: %s\n", f.VerificationLevel))
-	b.WriteString(fmt.Sprintf("\n%s\n", f.Message))
-	if len(f.Evidence) > 0 {
+func writeIssueMarkdown(b *strings.Builder, issue Issue) {
+	title := issue.Title
+	if title == "" {
+		title = issue.RuleID
+	}
+	b.WriteString(fmt.Sprintf("\n### %s\n", title))
+	if issue.RuleID != "" {
+		b.WriteString(fmt.Sprintf("- Rule ID: %s\n", issue.RuleID))
+	}
+	if len(issue.RuleIDs) > 0 {
+		b.WriteString(fmt.Sprintf("- Rule IDs: %s\n", strings.Join(issue.RuleIDs, ", ")))
+	}
+	b.WriteString(fmt.Sprintf("- Status: %s\n", issue.Status))
+	if issue.TrustClass != "" {
+		b.WriteString(fmt.Sprintf("- Trust Class: %s\n", issue.TrustClass))
+	}
+	if issue.Confidence != "" {
+		b.WriteString(fmt.Sprintf("- Confidence: %s\n", issue.Confidence))
+	}
+	if issue.Severity != "" {
+		b.WriteString(fmt.Sprintf("- Severity: %s\n", issue.Severity))
+	}
+	if len(issue.Evidence) > 0 {
 		b.WriteString("\nEvidence:\n")
-		for _, ev := range f.Evidence {
+		for _, ev := range issue.Evidence {
 			if ev.LineStart > 0 && ev.LineEnd > 0 {
 				b.WriteString(fmt.Sprintf("- `%s:%d-%d`", ev.File, ev.LineStart, ev.LineEnd))
 			} else {
@@ -340,50 +456,34 @@ func writeFindingMarkdown(b *strings.Builder, f rules.Finding) {
 			b.WriteString("\n")
 		}
 	}
-	if len(f.UnknownReasons) > 0 {
+	if len(issue.UnknownReasons) > 0 {
 		b.WriteString("\nUnknown reasons:\n")
-		for _, r := range f.UnknownReasons {
-			b.WriteString(fmt.Sprintf("- %s\n", r))
+		for _, reason := range issue.UnknownReasons {
+			b.WriteString(fmt.Sprintf("- %s\n", reason))
 		}
 	}
 }
 
-// WriteOutputs writes scan.json, report.json, and optionally report.md to the output directory.
-//
-// Write strategy: all files are staged in a temporary directory first. Only after
-// all staging writes succeed are files renamed into the output directory. os.Rename
-// on Unix atomically replaces the destination per-file. Stale files from previous
-// runs (e.g., report.md when switching to json-only format) are removed only AFTER
-// all new files are committed, so a failure never leaves the output directory empty.
-//
-// This is per-file atomic, not directory-level atomic. A concurrent reader may
-// briefly see a mix of old and new files during the rename batch.
 func WriteOutputs(outputDir string, scan ScanReport, vr VerificationReport, format string) error {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
-
 	stageDir, err := os.MkdirTemp(outputDir, ".cve-stage-*")
 	if err != nil {
 		return fmt.Errorf("create staging dir: %w", err)
 	}
 	defer os.RemoveAll(stageDir)
 
-	// Determine which files to write
 	newFiles := map[string]bool{"scan.json": true}
-
-	// Always write scan.json
 	if err := writeJSON(filepath.Join(stageDir, "scan.json"), scan); err != nil {
 		return fmt.Errorf("write scan.json: %w", err)
 	}
-
 	if format == "json" || format == "both" {
 		if err := writeJSON(filepath.Join(stageDir, "report.json"), vr); err != nil {
 			return fmt.Errorf("write report.json: %w", err)
 		}
 		newFiles["report.json"] = true
 	}
-
 	if format == "md" || format == "both" {
 		md := GenerateMarkdown(scan, vr)
 		if err := os.WriteFile(filepath.Join(stageDir, "report.md"), []byte(md), 0o644); err != nil {
@@ -392,9 +492,6 @@ func WriteOutputs(outputDir string, scan ScanReport, vr VerificationReport, form
 		newFiles["report.md"] = true
 	}
 
-	// Commit: rename staged files into output directory.
-	// os.Rename atomically replaces the destination on Unix,
-	// so existing files are overwritten without a delete-then-write gap.
 	entries, err := os.ReadDir(stageDir)
 	if err != nil {
 		return fmt.Errorf("read staging dir: %w", err)
@@ -406,23 +503,19 @@ func WriteOutputs(outputDir string, scan ScanReport, vr VerificationReport, form
 			return fmt.Errorf("rename %s: %w", entry.Name(), err)
 		}
 	}
-
-	// Clean up stale files AFTER all renames succeed.
-	// This prevents leaving the output directory empty on failure.
-	knownOutputs := []string{"scan.json", "report.json", "report.md"}
-	for _, name := range knownOutputs {
+	for _, name := range []string{"scan.json", "report.json", "report.md"} {
 		if !newFiles[name] {
 			os.Remove(filepath.Join(outputDir, name))
 		}
 	}
-
 	return nil
 }
 
-func writeJSON(path string, v interface{}) error {
+func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o644)
 }

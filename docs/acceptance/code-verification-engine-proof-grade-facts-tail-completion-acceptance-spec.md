@@ -153,7 +153,7 @@ The system must preserve:
 
 1. migration state
 2. migration reason
-3. legacy rule to migrated claim family mapping
+3. historical rule to migrated claim family mapping
 4. scenario row to claim mapping
 5. claim to evidence mapping
 
@@ -178,4 +178,4 @@ The proof-grade tail is accepted only when:
 1. the implementation is not merely functional, but audit-complete
 2. scenario outputs are protected by meaningful fixture and golden coverage
 3. migrated rule families are benchmarked beyond happy-path cases
-4. trace and compatibility outputs are sufficient for release review
+4. trace and trace outputs are sufficient for release review

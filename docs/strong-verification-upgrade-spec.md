@@ -299,7 +299,7 @@ Report summary:
 #### Acceptance criteria
 
 - JSON report includes the new fields.
-- Existing consumers are updated or compatibility is preserved.
+- Existing consumers are updated or output continuity is preserved.
 - Tests assert these fields are populated correctly.
 
 ### Phase 7: Benchmark And Calibration Expansion
@@ -381,7 +381,7 @@ Claude Code should stop and report if any of the following happen:
 
 1. A planned trusted upgrade still depends only on naming/import heuristics.
 2. A new fact type cannot be extracted with bounded complexity in the current analyzer architecture.
-3. Report contract changes would silently break public API consumers without a compatibility path.
+3. Report contract changes would silently break public API consumers without a historical bridge path.
 4. Benchmark additions are too weak to justify the trust upgrade.
 
 ## Definition Of Done
